@@ -16,4 +16,11 @@
 /** \brief maximum number of files allowed */
 #define MAX_NUM_THREADS 8
 
+/** \brief indicates if all files have been processed*/
+#define ALL_FILES_PROCESSED 0
+
+/** \brief indicates there are files to be processed*/
+#define FILES_TO_BE_PROCESSED 1
+
+
 #endif /* CONSTANTS_H */

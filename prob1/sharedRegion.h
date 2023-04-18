@@ -29,14 +29,23 @@ struct fileChunk {
     bool isFinished;
 };
 
+struct fileInfo {
+    char *filename;
+    FILE *fp;
+    bool isFinished;
+    int previousChar;
+    unsigned char *chunk;
+    int chunkSize;
+    int nWords;
+};
 
 /**
- * @brief 
- * 
- * @param filenames 
+ * @brief
+ *
+ * @param filenames
  */
-extern void storeFilenames(char *filenames[]);
-
+extern void
+storeFilenames(char *filenames[]);
 
 /**
  * @brief Resets the file structure for the next iteration of the program (new number of threads)

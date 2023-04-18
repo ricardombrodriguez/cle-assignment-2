@@ -2,25 +2,25 @@
  * @file main.c
  * @authors Pedro Sobral, Ricardo Rodriguez
  * @brief Text processing in Portuguese with Multithreading
- * 
+ *
  */
 
-
+#include <mpi.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-#include <pthread.h>
-#include <unistd.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "constants.h"
-#include "utils.h"
 #include "sharedRegion.h"
+#include "utils.h"
 
 /* Number of files to be processed */
 int numFiles = 0;
 
+/* Max. number of bytes allowed for a chunk */
 int CHUNK_BYTE_LIMIT;
 
 /* Number of threads */
@@ -29,176 +29,225 @@ int numThreads;
 /* Stores working thread status */
 int *threadStatus;
 
+/* Boolean control variable to see if all files have been processed */
 bool filesFinished = false;
 
 void usage();
 
 void *worker(void *id);
 
-
 /**
- * @brief 
- * 
- * @param argc 
- * @param argv 
- * @return int 
+ * @brief Main function
+ *
+ * @param argc
+ * @param argv
+ * @return int
  */
 int main(int argc, char *argv[]) {
 
+    /* Register start time of the clock */
     clock_t start, end;
     start = clock();
-  
+
+    /* Initialize MPI variables */
+    int rank, size;
+    int workStatus;
+
+    /* Initialize the MPI communicator and get the rank of processes and the count of processes */
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
     /* ERROR. No arguments for filenames were introduced to the program. */
     if (argc < 2) {
         printf("[ERROR] Invalid number of files");
+        MPI_Finalize();
         return 1;
     }
 
-    const char *optstr = "t:f:c:h";
-    int option;
-    char *filenames[MAX_NUM_FILES];
-    CHUNK_BYTE_LIMIT = 4096;
+    const char *optstr = "t:f:c:h";         /* Acceptable command line arguments and parsing */
+    int option;                             /* Store current command line arg */
+    char *filenames[MAX_NUM_FILES];         /* Declare filenames array */
+    CHUNK_BYTE_LIMIT = 4096;                
 
-    while ((option = getopt(argc, argv, optstr)) != -1) {
-        switch (option) {
-            case 't':
-                if (atoi(optarg) < 1 || atoi(optarg) > 8) {
-                    fprintf(stderr, "Invalid number of threads (must be >= 1 and <= 8)");
-                    return EXIT_FAILURE;
-                }
-                numThreads = atoi(optarg);
-                break;
-            case 'f':
-                filenames[numFiles++] = optarg;
-                while (optind < argc && argv[optind][0] != '-') {
-                    if (access(argv[optind], F_OK) == 0) {
-                        // file exists
-                        filenames[numFiles++] = argv[optind];
-                    } else {
-                        // file doesn't exist, show error and exit program
-                        printf("[ERROR] %s file doesn't exist", argv[optind]);
-                        return 1;
+    if (rank == 0) {
+        /**
+        * Root process is the dispatcher. Thus, it's responsible of:
+        * - processing the command line arguments
+        * - store all the file's names 
+        * - broadcast a message stating that he's ready to dispatch work for workers
+        * - assign work to workers (with a corresponding buffer for processing)
+        * - receive partial results from workers
+        * - present the final results
+        */
+
+        while ((option = getopt(argc, argv, optstr)) != -1) {
+            switch (option) {
+                case 't':
+                    if (atoi(optarg) < 1 || atoi(optarg) > 8) {
+                        fprintf(stderr, "Invalid number of threads (must be >= 1 and <= 8)");
+                        return EXIT_FAILURE;
                     }
-                    optind++;
-                }
-                break;
-            case 'c':
-                if (atoi(optarg) != 4096 && atoi(optarg) != 8192) {
-                    fprintf(stderr, "Invalid chunk size (must be 4k or 8k)");
+                    numThreads = atoi(optarg);
+                    break;
+                case 'f':
+                    filenames[numFiles++] = optarg;
+                    while (optind < argc && argv[optind][0] != '-') {
+                        if (access(argv[optind], F_OK) == 0) {
+                            // file exists
+                            filenames[numFiles++] = argv[optind];
+                        } else {
+                            // file doesn't exist, show error and exit program
+                            printf("[ERROR] %s file doesn't exist", argv[optind]);
+                            return 1;
+                        }
+                        optind++;
+                    }
+                    break;
+                case 'c':
+                    if (atoi(optarg) != 4096 && atoi(optarg) != 8192) {
+                        fprintf(stderr, "Invalid chunk size (must be 4k or 8k)");
+                        return EXIT_FAILURE;
+                    }
+                    CHUNK_BYTE_LIMIT = atoi(optarg);
+                    break;
+                case 'h':
+                    usage();
+                    return EXIT_SUCCESS;
+                default:
+                    fprintf(stderr, "Option Not Defined\n");
                     return EXIT_FAILURE;
+            }
+        }
+
+        MPI_Bcast(&CHUNK_BYTE_LIMIT, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        
+
+        struct fileInfo *files = (struct fileInfo *)malloc(numFiles * sizeof(struct fileInfo));
+        int nWorkers = 0;
+        int previousChar = 0;
+        int numWords = 0;
+        workStatus = FILES_TO_BE_PROCESSED;
+
+        usigned char *chunk = (unsigned char *)malloc(CHUNK_BYTE_LIMIT * sizeof(unsigned char));
+        memset(chunk, 0, CHUNK_BYTE_LIMIT * sizeof(unsigned char));
+
+        for (int i= 0; i < numFiles; i++)
+        {
+            (files + i)->filename = filenames[i];
+            (files + i)->fp = NULL;
+
+            if (((files + i)->fp = fopen(filenames[i], "rb")) == NULL) {
+                printf("[ERROR] %s file doesn't exist\n", filenames[i]);
+                exit(EXIT_FAILURE);
+            }
+
+            while (!((files + i)->isFinished))
+            {
+                for (nWorkers = 1; nWorkers < size; nWorkers++)
+                {
+                    if ((files + i)->isFinished)
+                    {
+                        fclose((files + i)->fp);
+                        break;
+                    }
+
+                    previousChar = (files + i)->previousChar;
+                    (files + i)->chunkSize =  fread(chunk, sizeof(unsigned char), CHUNK_BYTE_LIMIT, (files + i)->fp);
+               
+                    if ((files + i)->chunkSize < CHUNK_BYTE_LIMIT)
+                    {
+                        (files + i)->isFinished = true;
+                    } else {
+                        //getChunkSizeLastChar(chunk, files + i)
+                    }
+
+                    if ((files + i )->previousChar == EOF)
+                    {
+                        (files + i)->isFinished = true;
+                    }
+
+                    MPI_Send(&workStatus, 1, MPI_INT, nWorkers, 0, MPI_COMM_WORLD);
+                    MPI_Send(chunk, maxBytesPerChunk, MPI_UNSIGNED_CHAR, nWorkers, 0, MPI_COMM_WORLD);/* the chunk buffer */
+                    MPI_Send(&(filesData + nFile)->chunkSize, 1, MPI_INT, nWorkers, 0, MPI_COMM_WORLD);/* the size of the chunk */
+                    MPI_Send(&previousCh, 1, MPI_INT, nWorkers, 0, MPI_COMM_WORLD);/* the character of the previous chunk */
+
+                    memset(chunk, 0, CHUNK_BYTE_LIMIT * sizeof(unsigned char));
                 }
-                CHUNK_BYTE_LIMIT = atoi(optarg);
-                break;
-            case 'h':
-                usage();
-                return EXIT_SUCCESS;
-            default:
-                fprintf(stderr, "Option Not Defined\n");
-                return EXIT_FAILURE;
-        }
-    }
+                
+                for (i = 1; i < nWorkers; i++)
+                {
+                /* Receive the processing results from each worker process */
+                MPI_Recv(&numWords, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                //MPI_Recv(&nWordsBV, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                //MPI_Recv(&nWordsEC, 1, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-    printf("\n====== RUNNING PROGRAM FOR %d THREADS ======\n\n", numThreads);
+                /* update struct with new results */
+                (files + i)->nWords += numWords;
+                (files + i)->nWordsBV += nWordsBV;
+                (files + i)->nWordsEC += nWordsEC;
+                }
+            }
 
-    /* Initialize structures (setup) */
-    storeFilenames(filenames);
+            /* no more work to be done */
+            workStatus = ALL_FILES_PROCESSED;
+            /* inform workers that all files are process and they can exit */
+            for (i = 1; i < size; i++)
+            MPI_Send(&workStatus, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
 
-    /* Array of pthreads */
-    pthread_t threads[numThreads];
+            /* timer ends */
+            clock_gettime(CLOCK_MONOTONIC_RAW, &finish); /* end of measurement */
 
-    /* Array of pthread status memory allocation */
-    threadStatus = malloc(numThreads * sizeof(int));
+            /* print the results of the text processing */
+            printResults(filesData, numFiles);
 
-    /* Pointer to the thread status */
-    int *tStatus;
-
-    unsigned int threadIDs[numThreads];
-
-    // Creation of numThreads threads
-    for (unsigned int i = 0; i < numThreads; i++) {
-
-        threadIDs[i] = i;
-
-        /* Thread worker creation */
-        if (pthread_create(&threads[i], NULL, worker, &threadIDs[i]) != 0) {
-            perror("[ERROR] Cannot create thread.\n");
-            exit(1);
+            /* calculate the elapsed time */
+            printf("\nElapsed time = %.6f s\n", (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0);
         }
 
     }
+    else
+    {
+        MPI_Bcast(&CHUNK_BYTE_LIMIT, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    /* waiting for the termination of the worker threads */
+        /* allocating memory for the file data structure */
+        struct fileData *data = (struct fileData *)malloc(sizeof(struct fileData));
+        data->nWords = 0;
+        data->nWordsBV = 0;
+        data->nWordsEC = 0;
+        /* allocating memory for the chunk buffer */
+        data->chunk = (unsigned char *)malloc(CHUNK_BYTE_LIMIT * sizeof(unsigned char));
 
-    for (int i = 0; i < numThreads; i++) {
-
-        if (pthread_join(threads[i], (void *)&tStatus) != 0) {
-            perror("[ERROR] Could not wait for worker thread.\n");
-            exit(1);
-        }
-
-    }
-
-    /* Present results */
-    getResults();
-
-    printf("\n====== PROGRAM EXECUTED SUCCESSFULLY FOR %d THREADS ======\n\n", numThreads);
-    
-    resetFilesData();
-
-    end = clock();
-    printf("Time elapsed: %f seconds\n", (double)(end - start) / CLOCKS_PER_SEC);
-
-    exit(EXIT_SUCCESS);
-}
-
-/**
- * @brief 
- * 
- * @param threadID 
- * @return void* 
- */
-void *worker(void *id) {
-
-    unsigned int threadID = *((unsigned int *) id);
-    
-    /* Allocate memory to support a fileChunk structure */
-    struct fileChunk *chunkData = (struct fileChunk *)malloc(sizeof(struct fileChunk));
-    chunkData->chunk = (unsigned char *) malloc(CHUNK_BYTE_LIMIT * sizeof(unsigned char));
-    chunkData->isFinished = false;
-
-    /* Keep running while there is tasks/work to do */
-    while (true) {
-
-        /* No more chunks to process, end worker function */
-        if (filesFinished) {
+        while (true)
+        {
+        MPI_Recv(&workStatus, 1, MPI_UNSIGNED, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        if (workStatus == ALL_FILES_PROCESSED)
             break;
-        } 
 
-        /* Get chunk data from shared region for latter process */
-        getChunk(chunkData, threadID);
+        MPI_Recv(data->chunk, CHUNK_BYTE_LIMIT, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&data->chunkSize, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&data->previousCh, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        /* After getting the chunk, process it */
-        processChunk(chunkData);
+        /* perform text processing on the chunk */
+        processChunk(data);
+        /* Send the processing results to the dispatcher */
+        MPI_Send(&data->nWords, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+        MPI_Send(&data->nWordsBV, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+        MPI_Send(&data->nWordsEC, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+        /* reset structures */
+        data->nWords = 0;
+        data->nWordsBV = 0;
+        data->nWordsEC = 0;
+        }
+  }
 
-        /* Store the results for the processed chunk by the working thread */
-        saveThreadResults(chunkData, threadID);
-    
-        /* Initialize/reset chunk structure data */
-        resetChunkData(chunkData);
-
-    }
-
-    /* Deallocate memory */
-    free(chunkData);
-
-    threadStatus[threadID] = 0;                 /* Success */
-    void* tStatus = &threadStatus[threadID];
-    pthread_exit(tStatus);
+  MPI_Finalize();
+  exit(EXIT_SUCCESS);
 }
 
 /**
  * @brief prints the usage of the program
- * 
+ *
  */
 void usage() {
     printf("Usage:\n\t./prob1 -t <num_threads> -f <file1> <file2> ... <fileN> -c <chunk_size>\n\n");
