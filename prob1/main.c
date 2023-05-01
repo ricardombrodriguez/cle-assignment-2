@@ -44,12 +44,16 @@ int main(int argc, char *argv[]) {
     //clock_t start, end;
     //start = clock();
 
+    printf("Bom dia matosinhos\n");
+
     /* Initialize MPI variables */
     int rank, size;     /* Rank - Process ID | Size - Number of processes (including root)*/
     int workStatus;     /* Process control variable - used to know if there's still work to be done (or not) */
     int broadcast;      /* Message to be sent in the broadcast message */
     unsigned int numWords;
     unsigned int nWordsWithVowel[6];
+    int processReady;
+    MPI_Status status;
     
 
     /* Initialize the MPI communicator and get the rank of processes and the count of processes */
@@ -76,6 +80,9 @@ int main(int argc, char *argv[]) {
     CHUNK_BYTE_LIMIT = 4096;                /* Default chunk limit (in bytes) */
 
     if (rank == 0) {
+
+        printf("rank 0 \n");
+
         /**
         * Root process is the dispatcher. Thus, it's responsible of:
         * - processing the command line arguments
@@ -125,6 +132,8 @@ int main(int argc, char *argv[]) {
         /* Initialize fileInfo structure (setup and store filenames) */
         storeFilenames(filenames);
 
+        printf("stored filenames\n");
+
         struct fileInfo *files = (struct fileInfo *)malloc(numFiles * sizeof(struct fileInfo));
         int nWorkers = 0;
         workStatus = FILES_TO_BE_PROCESSED; // 1
@@ -133,6 +142,8 @@ int main(int argc, char *argv[]) {
         broadcast = 1;
 		MPI_Bcast(&broadcast, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
+        printf("broadcasted message!!!\n");
+
         /* Wait for chunk requests while there are still files to be processed (workStatus = FILES_TO_BE_PROCESSED) */
         while (workStatus)
         {
@@ -140,8 +151,8 @@ int main(int argc, char *argv[]) {
             for (nWorkers = 1; nWorkers < size; nWorkers++)
             {
 
-                int processReady;
-                MPI_Recv(&processReady, 1, MPI_C_BOOL, MPI_ANY_SOURCE, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(&processReady, 1, MPI_INT, MPI_ANY_SOURCE, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, &status);
+                printf("received %d from process %d\n", processReady, status.MPI_SOURCE);
 
                 /* Allocate memory to support a fileChunk structure */
                 struct fileChunk *chunkData = (struct fileChunk *) malloc(sizeof(struct fileChunk));
@@ -202,9 +213,16 @@ int main(int argc, char *argv[]) {
 
         while (true)
         {
+
+            processReady = 1;
+            MPI_Send(&processReady, 1, MPI_INT, status.MPI_SOURCE, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);
+
+            printf("im process %d and im ready. i sent a message to rank 0!!\n", rank);
     
             /* Receive the control variable from the dispatcher to know if there's work still to be done (or not) */
             MPI_Recv(&workStatus, 1, MPI_UNSIGNED, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            printf("im process %d and i received workstatus %d\n", rank, workStatus);
 
             /* End worker if all files have been processed */
             if (workStatus == ALL_FILES_PROCESSED)
@@ -214,12 +232,18 @@ int main(int argc, char *argv[]) {
             MPI_Recv(chunkData->chunk, CHUNK_BYTE_LIMIT, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             MPI_Recv(&chunkData->chunkSize, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
+            printf("im process %d and i received chunk with size %u\n", rank, chunkData->chunkSize);
+
             /* Process the received chunk */
             processChunk(chunkData);
+
+            printf("im process %d and i processed chunk\n", rank);
 
             /* Send the partial results to the dispatcher (root 0 process) */
             MPI_Send(&chunkData->numWords, 1, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);
             MPI_Send(&chunkData->nWordsWithVowel, 6, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);
+
+            printf("im process %d and i sent chunk with numWords = %u\n", rank,chunkData->numWords);
 
             /* Reset chunk data */
             chunkData = (struct fileChunk *){ 0 };
