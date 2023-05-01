@@ -8,13 +8,75 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "sharedRegion.h"
-
 #ifndef UTILS_H
 #define UTILS_H
 
+/**
+ * @brief Structure that saves the global results of each file (number of words and number of words with the vowels [aeiouy] )
+ * 
+ */
+struct fileInfo {
+    char *filename;
+    FILE *fp;
+    int numWords;
+    unsigned int nWordsWithVowel[6];
+    bool isFinished;
+};
 
-int getRemainingBytes(int byte);
+/**
+ * @brief Structure that saves the partial results of a chunk, whose data is going to be returned and added to the fileInfo structure (global results) when finished
+ * 
+ */
+struct fileChunk {
+    unsigned int fileIndex;
+    unsigned char *chunk;
+    unsigned int chunkSize;
+    unsigned int numWords;
+    unsigned int nWordsWithVowel[6];
+    bool isFinished;
+};
+
+
+/**
+ * @brief Get the text file names by processing the command line and storing them in the shared region for future retrieval by worker threads
+ * 
+ * @param filenames 
+ */
+extern void storeFilenames(char *filenames[]);
+
+/**
+ * @brief Resets the file structure for the next iteration of the program (new number of threads)
+ * 
+ */
+void resetFilesData();
+
+
+
+/**
+ * @brief Get the Chunk object
+ * 
+ * @param chunkData 
+ * @param threadID 
+ */
+extern unsigned int getChunk(struct fileChunk *chunkData);
+
+
+/**
+ * @brief 
+ * 
+ * @param chunkData 
+ */
+extern void resetChunkData(struct fileChunk *chunkData);
+
+/**
+ * @brief Get the Results object
+ * 
+ */
+extern void getResults();
+
+
+
+extern int getRemainingBytes(int byte);
 
 /**
  * @brief 
