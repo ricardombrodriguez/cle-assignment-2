@@ -31,7 +31,8 @@ extern int currentFileIndex;
 /* File sructure initialization */
 struct fileInfo *files;
 
-extern bool filesFinished;
+/* Process control variable - used to know if there's still work to be done (or not) */
+extern int workStatus;  
 
 
 /**
@@ -106,7 +107,8 @@ unsigned int getChunk(struct fileChunk *chunkData) {
                 chunkData->isFinished = true;
 
                 if (currentFileIndex == numFiles) {
-                    filesFinished = true;
+                    printf("||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||\n");
+                    workStatus = ALL_FILES_PROCESSED;
                 } 
 
                 break;
@@ -306,6 +308,7 @@ void processChunk(struct fileChunk *chunkData) {
 
     int byte;
 
+    printf("CHUNKKKKKKKKKKKKKKK SIZEEEEEEEEEEEEEEEE %u\n\n\n", chunkData->chunkSize);
 
     for (int i = 0; i < chunkData->chunkSize; i++) {
 
@@ -384,5 +387,7 @@ void processChunk(struct fileChunk *chunkData) {
         }
 
     }
+
+    printf("[PROCESS CHUNK] NUm words: %u\n", chunkData->numWords);
 
 }
