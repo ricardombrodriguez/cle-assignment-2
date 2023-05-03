@@ -1,6 +1,0 @@
-
-prob1.out:309591 terminated with signal 11 at PC=55f2cbda7c52 SP=7ffcefc54a50.  Backtrace:
-./prob1.out(+0x1c52)[0x55f2cbda7c52]
-/lib/x86_64-linux-gnu/libc.so.6(+0x29d90)[0x7ffa42229d90]
-/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x80)[0x7ffa42229e40]
-./prob1.out(+0x2275)[0x55f2cbda8275]
