@@ -73,7 +73,7 @@ void resetFilesData() {
  * @param chunkData 
  * @param threadID 
  */
-unsigned int getChunk(struct fileChunk *chunkData) {
+unsigned int getChunk(struct fileChunk *chunkData, int rank) {
 
     /* There are files still remanining to be processed */
     if (currentFileIndex < numFiles) {
@@ -103,14 +103,16 @@ unsigned int getChunk(struct fileChunk *chunkData) {
             /* EOF byte */
             if (byte == EOF) {
 
+                fclose((files + currentFileIndex)->fp);
+
                 currentFileIndex++;
                 dividedWordOffset = 0;
                 chunkData->chunkSize = byteIndex;
                 chunkData->isFinished = true;
 
                 if (currentFileIndex == numFiles) {
-                    printf("||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||\n");
-                    workStatus = ALL_FILES_PROCESSED;
+                    workStatus = rank;
+                    printf("END OF EVERYTHING\n\n\n\nWORKSTATUS = %u\n", workStatus);
                 } 
 
                 break;

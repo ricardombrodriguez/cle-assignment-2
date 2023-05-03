@@ -58,7 +58,7 @@ void resetFilesData();
  * @param chunkData 
  * @param threadID 
  */
-extern unsigned int getChunk(struct fileChunk *chunkData);
+extern unsigned int getChunk(struct fileChunk *chunkData, int rank);
 
 
 /**
