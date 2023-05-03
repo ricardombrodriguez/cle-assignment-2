@@ -132,10 +132,9 @@ int main(int argc, char *argv[]) {
         }        
 
         files = (struct fileInfo *)malloc(numFiles * sizeof(struct fileInfo));
+
         /* Initialize fileInfo structure (setup and store filenames) */
         storeFilenames(files, filenames);
-
-        printf("stored filenames\n");
 
         int nWorkers = 0;
         //workStatus = FILES_TO_BE_PROCESSED; // 1
@@ -170,8 +169,6 @@ int main(int argc, char *argv[]) {
                 MPI_Send(&chunkData->fileIndex, 1, MPI_UNSIGNED, nWorkers, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);                  /* the index file of the chunk */
                 MPI_Send(&chunkData->chunkSize, 1, MPI_UNSIGNED, nWorkers, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);                  /* the size of the chunk */
 
-                printf("[root] sent to process %d\n", nWorkers);
-
                 memset(chunkData->chunk, 0, CHUNK_BYTE_LIMIT * sizeof(unsigned char));
 
     
@@ -196,12 +193,9 @@ int main(int argc, char *argv[]) {
 
         }
 
-        printf("======= ACABOU =============\n\n\n\n");
-
         //workStatus = ALL_FILES_PROCESSED;
 		/* inform workers that all files are process and they can exit */
 		for (int i = 1; i < size; i++) {
-            printf("[ROOT] Sending end message to process %d\n", i);
 		    MPI_Send(&workStatus, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);
         }
 
@@ -232,26 +226,19 @@ int main(int argc, char *argv[]) {
 
         while (true)
         {
-            
-            printf("Rank is %d \n", rank);
     
             /* Receive the control variable from the dispatcher to know if there's work still to be done (or not) */
             MPI_Recv(&workStatus, 1, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
             /* End worker if all files have been processed */
             if (workStatus != 0 && workStatus != rank) {
-                printf("[RANK %d] LEFTTT\n", rank);
                 break;
             }
-
-            printf("[RANK %d] workStatus %u\n", rank, workStatus);
 
             /* Receive the chunk and other additional information for later processing from the dispatcher (root 0 process) */
             MPI_Recv(chunkData->chunk, CHUNK_BYTE_LIMIT, MPI_UNSIGNED_CHAR, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             MPI_Recv(&chunkData->fileIndex, 1, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             MPI_Recv(&chunkData->chunkSize, 1, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-            printf("[RANK %d] receivingggggggg..\n", rank);
 
             /* Process the received chunk */
             processChunk(chunkData);
@@ -261,22 +248,17 @@ int main(int argc, char *argv[]) {
             MPI_Send(&chunkData->nWordsWithVowel, 6, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);
             MPI_Send(&chunkData->fileIndex, 1, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);
 
-            printf("[RANK %d] sending %u words..\n", rank, chunkData->numWords);
-
             /* Reset chunk data */
             resetChunkData(chunkData);
 
             /* End worker if all files have been processed */
             if (workStatus != 0) {
-                printf("[RANK %d] LEFTTT\n", rank);
                 break;
             }
             
         }
 
     }
-
-    printf("[RANK %d] FINALIZEEEE\n", rank);
 
     MPI_Finalize();
     exit(EXIT_SUCCESS);
