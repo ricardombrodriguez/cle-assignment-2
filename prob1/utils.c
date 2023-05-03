@@ -40,16 +40,18 @@ extern int workStatus;
  * 
  * @param filenames 
  */
-void storeFilenames(char *filenames[]) {
-
-    // Allocate memory dynamically using the malloc function to create an array of numFiles elements of struct 'file' type
-    files = (struct fileInfo *) malloc(numFiles * sizeof(struct fileInfo));
+void storeFilenames(struct fileInfo *files, char *filenames[]) {
 
     // Initialize each element of 'files' of struct file 
     for (int i = 0; i < numFiles; i++) {
         memset((files + i), 0, sizeof(struct fileInfo));
         (files + i)->fp = NULL;
         (files + i)->filename = filenames[i];
+        (files + i)->numWords = 0;
+        for (int j = 0; j < 6; j++) {
+            (files + i)->nWordsWithVowel[j] = 0;
+        }
+        (files + i)->isFinished = false;
     }
 
 }
@@ -308,8 +310,6 @@ void processChunk(struct fileChunk *chunkData) {
 
     int byte;
 
-    printf("CHUNKKKKKKKKKKKKKKK SIZEEEEEEEEEEEEEEEE %u\n\n\n", chunkData->chunkSize);
-
     for (int i = 0; i < chunkData->chunkSize; i++) {
 
         byte = chunkData->chunk[i];
@@ -387,7 +387,5 @@ void processChunk(struct fileChunk *chunkData) {
         }
 
     }
-
-    printf("[PROCESS CHUNK] NUm words: %u\n", chunkData->numWords);
 
 }

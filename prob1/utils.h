@@ -18,7 +18,7 @@
 struct fileInfo {
     char *filename;
     FILE *fp;
-    int numWords;
+    unsigned int numWords;
     unsigned int nWordsWithVowel[6];
     bool isFinished;
 };
@@ -42,7 +42,7 @@ struct fileChunk {
  * 
  * @param filenames 
  */
-extern void storeFilenames(char *filenames[]);
+extern void storeFilenames(struct fileInfo *files, char *filenames[]);
 
 /**
  * @brief Resets the file structure for the next iteration of the program (new number of threads)

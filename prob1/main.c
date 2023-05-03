@@ -29,7 +29,9 @@ bool filesFinished = false;
 int currentFileIndex = 0;
 
 /* Process control variable - used to know if there's still work to be done (or not) */
-int workStatus;     
+int workStatus;    
+
+extern struct fileInfo *files;
 
 /* Declaration of the function usage -> Usage of the program */
 void usage();
@@ -52,7 +54,7 @@ int main(int argc, char *argv[]) {
     /* Initialize MPI variables */
     int rank, size;     /* Rank - Process ID | Size - Number of processes (including root)*/
     int broadcast;      /* Message to be sent in the broadcast message */
-    unsigned int numWords;
+    unsigned int numWords = 0;
     unsigned int nWordsWithVowel[6];
     int processReady;
     MPI_Status status;
@@ -131,20 +133,18 @@ int main(int argc, char *argv[]) {
             }
         }        
 
+        files = (struct fileInfo *)malloc(numFiles * sizeof(struct fileInfo));
         /* Initialize fileInfo structure (setup and store filenames) */
-        storeFilenames(filenames);
+        storeFilenames(files, filenames);
 
         printf("stored filenames\n");
 
-        struct fileInfo *files = (struct fileInfo *)malloc(numFiles * sizeof(struct fileInfo));
         int nWorkers = 0;
         workStatus = FILES_TO_BE_PROCESSED; // 1
 
 		/* Broadcast message to working processes, so that they can start asking for chunks */
         broadcast = 1;
 		MPI_Bcast(&broadcast, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-        printf("broadcasted message!!!\n");
 
         /* Wait for chunk requests while there are still files to be processed (workStatus = FILES_TO_BE_PROCESSED) */
         while (workStatus)
@@ -154,13 +154,10 @@ int main(int argc, char *argv[]) {
             {
                 /* All files were processed */
                 if (workStatus == ALL_FILES_PROCESSED) {
-                    printf("=====================\n");
                     break;
                 }
 
                 MPI_Recv(&processReady, 1, MPI_INT, MPI_ANY_SOURCE, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, &status);
-                printf("[ROOT] received %d from process %d\n", processReady, status.MPI_SOURCE);
-
                 /* Allocate memory to support a fileChunk structure */
                 struct fileChunk *chunkData = (struct fileChunk *) malloc(sizeof(struct fileChunk));
 
@@ -170,17 +167,12 @@ int main(int argc, char *argv[]) {
                 /* Get chunk data */
                 chunkData->chunkSize = getChunk(chunkData);
 
-                printf("[ROOT] chunkSize %d\n", chunkData->chunkSize);
-                printf("[ROOT] chunk %s\n", chunkData->chunk);
-
-                MPI_Send(&workStatus, 1, MPI_UNSIGNED, nWorkers, 0, MPI_COMM_WORLD);
-                MPI_Send(chunkData->chunk, CHUNK_BYTE_LIMIT, MPI_UNSIGNED_CHAR, nWorkers, 0, MPI_COMM_WORLD);   /* the chunk buffer */
-                MPI_Send(&chunkData->fileIndex, 1, MPI_UNSIGNED, nWorkers, 0, MPI_COMM_WORLD);                  /* the index file of the chunk */
-                MPI_Send(&chunkData->chunkSize, 1, MPI_UNSIGNED, nWorkers, 0, MPI_COMM_WORLD);                  /* the size of the chunk */
+                MPI_Send(&workStatus, 1, MPI_UNSIGNED, nWorkers, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);
+                MPI_Send(chunkData->chunk, CHUNK_BYTE_LIMIT, MPI_UNSIGNED_CHAR, nWorkers, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);   /* the chunk buffer */
+                MPI_Send(&chunkData->fileIndex, 1, MPI_UNSIGNED, nWorkers, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);                  /* the index file of the chunk */
+                MPI_Send(&chunkData->chunkSize, 1, MPI_UNSIGNED, nWorkers, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);                  /* the size of the chunk */
 
                 memset(chunkData->chunk, 0, CHUNK_BYTE_LIMIT * sizeof(unsigned char));
-
-                printf("[ROOT] Enviei chunk com %u bytes para o processo %d\n", chunkData->chunkSize, nWorkers);
     
             }
 
@@ -192,9 +184,6 @@ int main(int argc, char *argv[]) {
                 MPI_Recv(&numWords, 1, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(&nWordsWithVowel, 6, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(&fileIndex, 1, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                // RECEBER TAMBÉM O FILE INDEX DO WORKER PROCESS PARA ADICIONAR AO (files + fileIndex)
-
-                printf("[ROOT] RECEBI %u PALAVRAS DO processo %d\n", numWords, nWorkers);
 
                 /* Update/store partial results from the processed chunk */
                 (files + fileIndex)->numWords += numWords;
@@ -202,20 +191,17 @@ int main(int argc, char *argv[]) {
                     (files + fileIndex)->nWordsWithVowel[j] += nWordsWithVowel[j];
                 }
 
-                printf("[ROOT] filename wordssssssss %u\n\n\n\n", (files + fileIndex)->numWords);
-
-
             }
 
         }
 
         printf("======= ACABOU =============\n\n\n\n");
 
-		/* no more work to be done */
-		workStatus = ALL_FILES_PROCESSED; //0
 		/* inform workers that all files are process and they can exit */
-		for (int i = 1; i < size; i++)
-		    MPI_Send(&workStatus, 1, MPI_INT, i, MPI_TAG_END_WORK, MPI_COMM_WORLD);
+		for (int i = 1; i < size; i++) {
+            printf("[ROOT] Sending end message to process %d\n", i);
+		    MPI_Send(&workStatus, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);
+        }
 
 		/* print the results of the text processing */
 		getResults();
@@ -229,68 +215,64 @@ int main(int argc, char *argv[]) {
 
         /* Receive brodcast message */
         MPI_Bcast(&broadcast, 1, MPI_INT, 0, MPI_COMM_WORLD);
-        printf("im process %d and i received the broadcasted message! \n", rank);
 
         /* Allocate memory to support a fileChunk structure */
         struct fileChunk *chunkData = (struct fileChunk *) malloc(sizeof(struct fileChunk));
+        chunkData->fileIndex = currentFileIndex;
         chunkData->chunk = (unsigned char *) malloc(CHUNK_BYTE_LIMIT * sizeof(unsigned char));
+        chunkData->chunkSize = 0;
+        chunkData->numWords = 0;
+        for (int i = 0; i < 6; i++) {
+            chunkData->nWordsWithVowel[i] = 0;
+        }
         chunkData->isFinished = false;
+        
 
         while (true)
         {
+            
+            printf("Rank is %d \n", rank);
 
             processReady = 1;
-            //printf("MPI SOURCE ISSSSS %d\n", status.MPI_SOURCE);
+            printf("[RANK %d] Sending process ready..\n", rank);
             MPI_Send(&processReady, 1, MPI_INT, 0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);
     
             /* Receive the control variable from the dispatcher to know if there's work still to be done (or not) */
-            MPI_Recv(&workStatus, 1, MPI_UNSIGNED, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-            /*
-            End worker if all files have been processed 
-            if (workStatus == ALL_FILES_PROCESSED) {
-                printf("[PROCESS %d] All files processeddddddddddddddddddddddd\n", rank);
-                break;
-            }
-            */
+            MPI_Recv(&workStatus, 1, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
             /* Receive the chunk and other additional information for later processing from the dispatcher (root 0 process) */
-            MPI_Recv(chunkData->chunk, CHUNK_BYTE_LIMIT, MPI_UNSIGNED_CHAR, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            MPI_Recv(&chunkData->fileIndex, 1, MPI_UNSIGNED, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            MPI_Recv(&chunkData->chunkSize, 1, MPI_UNSIGNED, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(chunkData->chunk, CHUNK_BYTE_LIMIT, MPI_UNSIGNED_CHAR, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(&chunkData->fileIndex, 1, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(&chunkData->chunkSize, 1, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-            printf("[process %d] received chunk with size %u\n", rank, chunkData->chunkSize);
-            printf("[process %d] received chunk %s\n\n\n\n", rank, chunkData->chunk);
+            printf("[RANK %d] receivingggggggg..\n", rank);
 
             /* Process the received chunk */
             processChunk(chunkData);
-
-            printf("[process %d] i processed chunk\n", rank);
 
             /* Send the partial results to the dispatcher (root 0 process) */
             MPI_Send(&chunkData->numWords, 1, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);
             MPI_Send(&chunkData->nWordsWithVowel, 6, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);
             MPI_Send(&chunkData->fileIndex, 1, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);
 
-
-            printf("im process %d and i sent chunk with numWords = %u\n", rank,chunkData->numWords);
-
-
             /* Reset chunk data */
-            chunkData = (struct fileChunk *){ 0 };
+            resetChunkData(chunkData);
 
             /* End worker if all files have been processed */
             if (workStatus == ALL_FILES_PROCESSED) {
-                printf("[PROCESS %d] All files processeddddddddddddddddddddddd\n", rank);
+                printf("LEFTTT\n");
                 break;
             }
             
         }
 
-        MPI_Finalize();
-        exit(EXIT_SUCCESS);
-
     }
+
+    printf("[RANK %d] FINALIZEEEE\n", rank);
+
+    MPI_Finalize();
+    exit(EXIT_SUCCESS);
+
 
 }
 
