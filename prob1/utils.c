@@ -20,6 +20,7 @@
 /* Number of files to be processed */
 extern int numFiles;
 
+/* Max. number of bytes allowed for a chunk */
 extern int CHUNK_BYTE_LIMIT;
 
 /* Number of threads */
@@ -28,17 +29,21 @@ extern int numThreads;
 /* Stores the index of the current file being proccessed by the working processes */
 extern int currentFileIndex;
 
-/* File sructure initialization */
+/* File structure declaration - will be used to store file related data (numWords, etc..) */
 struct fileInfo *files;
 
-/* Process control variable - used to know if there's still work to be done (or not) */
+/** Process control variable - used to know if there's still work to be done (or not) 
+ * 0 -> Work is not done yet. There are still chunks/files that need to be read and/or processed
+ * (!= 0) -> If workStatus = N, then process N received the last chunk and needs to process it, while others processes dont ask for another job/chunk
+ */
 extern int workStatus;  
 
 
 /**
  * @brief Get the text file names by processing the command line and storing them in the shared region for future retrieval by worker threads
  * 
- * @param filenames 
+ * @param files fileInfo structure to store data
+ * @param filenames name of the input files
  */
 void storeFilenames(struct fileInfo *files, char *filenames[]) {
 
@@ -56,22 +61,17 @@ void storeFilenames(struct fileInfo *files, char *filenames[]) {
 
 }
 
-/**
- * @brief Resets the file structure for the next iteration of the program (new number of threads)
- * 
- */
-void resetFilesData() {
-
-    files = (struct fileInfo *){ 0 };
-
-}
-
 
 /**
- * @brief Get the Chunk object
+ * @brief Get the Chunk object of the current file we're reading
+ * Byte for byte reading of the file until the chunk reached the CHUNK_BYTE_LIMIT
+ * Finishes if CHUNK_BYTE_LIMIT is reached or if we reach the EOF
+ * The function removes word offset bytes from the chunk so that the next chunk can
+ * fully read the word
  * 
- * @param chunkData 
- * @param threadID 
+ * 
+ * @param chunkData  fileChunk structure
+ * @param rank  of the MPI process
  */
 unsigned int getChunk(struct fileChunk *chunkData, int rank) {
 
@@ -112,7 +112,6 @@ unsigned int getChunk(struct fileChunk *chunkData, int rank) {
 
                 if (currentFileIndex == numFiles) {
                     workStatus = rank;
-                    printf("END OF EVERYTHING\n\n\n\nWORKSTATUS = %u\n", workStatus);
                 } 
 
                 break;
@@ -170,7 +169,7 @@ unsigned int getChunk(struct fileChunk *chunkData, int rank) {
 
 
 /**
- * @brief 
+ * @brief Resets the fileChunk structure
  * 
  * @param chunkData 
  */
@@ -280,7 +279,12 @@ void resetWordVowels(bool wordHasVowels[6]) {
 }
 
 
-
+/**
+ * @brief Get the Remaining Bytes according to the first byte. Used in the getChunk() method
+ * 
+ * @param byte 
+ * @return int 
+ */
 int getRemainingBytes(int byte) {
     if (byte < 192) {
         // 0x0XXXXXXX
@@ -298,9 +302,11 @@ int getRemainingBytes(int byte) {
 }
 
 /**
- * @brief 
+ * @brief Reads the chunkData->chunkSize bytes belonging to chunkData->chunk and
+ * calculates the number of words (numWords) and the number of words with vowels
+ * (nWordsWithVowel) of the given chunk
  * 
- * @param chunk 
+ * @param chunkData 
  */
 void processChunk(struct fileChunk *chunkData) {
 

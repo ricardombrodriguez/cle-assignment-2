@@ -1,13 +1,50 @@
 /**
  * @file main.c
  * @authors Pedro Sobral, Ricardo Rodriguez
- * @brief Text processing in Portuguese with Multithreading
+ * @brief Development and validation of a multiprocess message passing application using the MPI library.
+ *  
+ * Problem: Text processing in Portuguese with Multithreading
+ * 
+ * The goal of this program is to receive command line arguments, which capture the names of the input files 
+ * and the size of the chunk in bytes (optional) and process them in order to:
+ * - get the number of words in the file;
+ * - get the number of words with each vowel (['a','e','i','o','u','y']) in the file;
+ * 
+ * This program uses a multiprocess solution, using the MPI library, where the dispatcher (root process) will
+ * read the chunk from the input files and send it to available worker processes (different from the root process).
+ * 
+ * The workers should process the chunk to extract the information (numWords and nWordsWithVowel) and then send the
+ * partial results to the dispatcher, which will save all the partial results from the workers in order to get the
+ * total numWords and nWordsWithVowel of each file.
+ *
+ * Dispatcher process workflow:
+ *
+ * 1 - Read and process the command line arguments;
+ * 2 - Store filenames and initialize the structure related each file
+ * 3 - Broadcast a message with the limit of bytes each chunk will have
+ * 4 - While there's work to do / files to process (workStatus == 0):
+ *      4.1 - Get a chunk with CHUNK_BYTE_LIMIT bytes of the current file we're analyzing
+ *      4.2 - Send the chunk (and other important info) to the worker process for processing
+ *      4.3 - Receive the partial results from the worker's processed chunk
+ *      4.4 - Add the chunk results to the file results
+ * 5 - Inform workers that all files are process and they can exit
+ * 6 - Print the results of the text processing of all the input files
+ * 7 - Finalize
+ * 
+ * Worker process workflow:
+ *
+ * 1 - Receive the broadcasted message from the dispatcher with the limit of bytes each chunk will have
+ * 2 - While the dispatcher says there's work to be done (while workStatus == 0):
+ *      2.1 - Receive the chunk and other important info from the dispatcher
+ *      2.2 - Process the received chunk
+ *      2.3 - Send the partial results from chunk processing to the dispatcher process
+ * 3 - Finalize
  *
  */
 
 #include <mpi.h>
-#include <stdbool.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -22,22 +59,47 @@ int numFiles = 0;
 /* Max. number of bytes allowed for a chunk */
 int CHUNK_BYTE_LIMIT;
 
-/* Boolean control variable to see if all files have been processed */
-bool filesFinished = false;
-
 /* Stores the index of the current file being proccessed by the working processes */
 int currentFileIndex = 0;
 
-/* Process control variable - used to know if there's still work to be done (or not) */
-int workStatus = 0;
-
+/* File structure declaration - will be used to store file related data (numWords, etc..) */
 extern struct fileInfo *files;
+
+/** Process control variable - used to know if there's still work to be done (or not) 
+ * 0 -> Work is not done yet. There are still chunks/files that need to be read and/or processed
+ * (!= 0) -> If workStatus = N, then process N received the last chunk and needs to process it, while others processes dont ask for another job/chunk
+ */
+int workStatus = 0;
 
 /* Declaration of the function usage -> Usage of the program */
 void usage();
 
 /**
- * @brief Main function
+ * @brief Main program
+ *
+ * Dispatcher process workflow:
+ *
+ * 1 - Read and process the command line arguments;
+ * 2 - Store filenames and initialize the structure related each file
+ * 3 - Broadcast a message with the limit of bytes each chunk will have
+ * 4 - While there's work to do / files to process (workStatus == 0):
+ *      4.1 - Get a chunk with CHUNK_BYTE_LIMIT bytes of the current file we're analyzing
+ *      4.2 - Send the chunk (and other important info) to the worker process for processing
+ *      4.3 - Receive the partial results from the worker's processed chunk
+ *      4.4 - Add the chunk results to the file results
+ * 5 - Inform workers that all files are process and they can exit
+ * 6 - Print the results of the text processing of all the input files
+ * 7 - Finalize
+ * 
+ * Worker process workflow:
+ *
+ * 1 - Receive the broadcasted message from the dispatcher with the limit of bytes each chunk will have
+ * 2 - While the dispatcher says there's work to be done (while workStatus == 0):
+ *      2.1 - Receive the chunk and other important info from the dispatcher
+ *      2.2 - Process the received chunk
+ *      2.3 - Send the partial results from chunk processing to the dispatcher process
+ * 3 - Finalize
+ *
  *
  * @param argc
  * @param argv
@@ -45,19 +107,12 @@ void usage();
  */
 int main(int argc, char *argv[]) {
 
-    /* Register start time of the clock */
-    //clock_t start, end;
-    //start = clock();
-
-    printf("Bom dia matosinhos\n");
-
     /* Initialize MPI variables */
     int rank, size;     /* Rank - Process ID | Size - Number of processes (including root)*/
-    int broadcast;      /* Message to be sent in the broadcast message */
-    unsigned int numWords = 0;
-    unsigned int nWordsWithVowel[6];
+    unsigned int numWords = 0;          /* Variable used to store the number of words of a worker's processed chunk */
+    unsigned int nWordsWithVowel[6];    /* Variable used to store the number of words with vowels [aeiouy] of a worker's processed chunk */
+    unsigned int fileIndex;             /* Variable used to store the file index of a worker's processed chunk */
     
-
     /* Initialize the MPI communicator and get the rank of processes and the count of processes */
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -83,7 +138,11 @@ int main(int argc, char *argv[]) {
 
     if (rank == 0) {
 
-        printf("rank 0 \n");
+        /* Structure used to keep track of the execution time */
+        struct timespec start, finish;
+        
+        /* Clock start */
+        clock_gettime(CLOCK_MONOTONIC_RAW, &start);
 
         /**
         * Root process is the dispatcher. Thus, it's responsible of:
@@ -131,25 +190,24 @@ int main(int argc, char *argv[]) {
             }
         }        
 
+        /* Allocation of memory to the fileInfo structure */
         files = (struct fileInfo *)malloc(numFiles * sizeof(struct fileInfo));
-
         /* Initialize fileInfo structure (setup and store filenames) */
         storeFilenames(files, filenames);
 
+        /* Keep track of the current worker's rank ID */
         int nWorkers = 0;
-        //workStatus = FILES_TO_BE_PROCESSED; // 1
 
 		/* Broadcast message to working processes, so that they can start asking for chunks */
-        broadcast = 1;
-		MPI_Bcast(&broadcast, 1, MPI_INT, 0, MPI_COMM_WORLD);
+		MPI_Bcast(&CHUNK_BYTE_LIMIT, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-        /* Wait for chunk requests while there are still files to be processed (workStatus = FILES_TO_BE_PROCESSED) */
+        /* Wait for chunk requests while there are still files to be processed */
         while (!workStatus)
         {
 
+            /* For all the worker processes */
             for (nWorkers = 1; nWorkers < size; nWorkers++)
             {
-
                 /* All files were processed */
                 if (workStatus != 0) {
                     break;
@@ -158,12 +216,13 @@ int main(int argc, char *argv[]) {
                 /* Allocate memory to support a fileChunk structure */
                 struct fileChunk *chunkData = (struct fileChunk *) malloc(sizeof(struct fileChunk));
 
+                /*Allocate memory for the chunk */
                 chunkData->chunk = (unsigned char *) malloc(CHUNK_BYTE_LIMIT * sizeof(unsigned char));
                 chunkData->isFinished = false;
-
                 /* Get chunk data */
                 chunkData->chunkSize = getChunk(chunkData, nWorkers);
 
+                /* Send the workStatus, chunk, fileIndex and chunkSize to the worker process */
                 MPI_Send(&workStatus, 1, MPI_INT, nWorkers, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);
                 MPI_Send(chunkData->chunk, CHUNK_BYTE_LIMIT, MPI_UNSIGNED_CHAR, nWorkers, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);   /* the chunk buffer */
                 MPI_Send(&chunkData->fileIndex, 1, MPI_UNSIGNED, nWorkers, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);                  /* the index file of the chunk */
@@ -174,9 +233,9 @@ int main(int argc, char *argv[]) {
     
             }
 
+            /* For all the worker processes */
             for (int i = 1; i < nWorkers; i++)
             {
-                unsigned int fileIndex;
 
                 /* Receive the processing results from each worker process */
                 MPI_Recv(&numWords, 1, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -193,24 +252,26 @@ int main(int argc, char *argv[]) {
 
         }
 
-        //workStatus = ALL_FILES_PROCESSED;
-		/* inform workers that all files are process and they can exit */
+		/* Inform workers that all files are process and they can exit */
 		for (int i = 1; i < size; i++) {
 		    MPI_Send(&workStatus, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);
         }
 
-		/* print the results of the text processing */
+        /* Clock end */
+        clock_gettime(CLOCK_MONOTONIC_RAW, &finish);
+
+		/* Print the results of the text processing of all files */
 		getResults();
 
-		/* calculate the elapsed time */
-		//printf("\nElapsed time = %.6f s\n", (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0);
+		/* Calculate execution time */
+		printf("\eExecution time = %.6f s\n", (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0);
 
     }
     else
     {
 
-        /* Receive brodcast message */
-        MPI_Bcast(&broadcast, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        /* Receive brodcast message from the dispatcher */
+        MPI_Bcast(&CHUNK_BYTE_LIMIT, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
         /* Allocate memory to support a fileChunk structure */
         struct fileChunk *chunkData = (struct fileChunk *) malloc(sizeof(struct fileChunk));

@@ -40,29 +40,28 @@ struct fileChunk {
 /**
  * @brief Get the text file names by processing the command line and storing them in the shared region for future retrieval by worker threads
  * 
- * @param filenames 
+ * @param files fileInfo structure to store data
+ * @param filenames name of the input files
  */
 extern void storeFilenames(struct fileInfo *files, char *filenames[]);
 
-/**
- * @brief Resets the file structure for the next iteration of the program (new number of threads)
- * 
- */
-void resetFilesData();
-
-
 
 /**
- * @brief Get the Chunk object
+ * @brief Get the Chunk object of the current file we're reading
+ * Byte for byte reading of the file until the chunk reached the CHUNK_BYTE_LIMIT
+ * Finishes if CHUNK_BYTE_LIMIT is reached or if we reach the EOF
+ * The function removes word offset bytes from the chunk so that the next chunk can
+ * fully read the word
  * 
- * @param chunkData 
- * @param threadID 
+ * 
+ * @param chunkData  fileChunk structure
+ * @param rank  of the MPI process
  */
 extern unsigned int getChunk(struct fileChunk *chunkData, int rank);
 
 
 /**
- * @brief 
+ * @brief Resets the fileChunk structure
  * 
  * @param chunkData 
  */
@@ -75,13 +74,20 @@ extern void resetChunkData(struct fileChunk *chunkData);
 extern void getResults();
 
 
-
+/**
+ * @brief Get the Remaining Bytes according to the first byte. Used in the getChunk() method
+ * 
+ * @param byte 
+ * @return int 
+ */
 extern int getRemainingBytes(int byte);
 
 /**
- * @brief 
+ * @brief Reads the chunkData->chunkSize bytes belonging to chunkData->chunk and
+ * calculates the number of words (numWords) and the number of words with vowels
+ * (nWordsWithVowel) of the given chunk
  * 
- * @param chunk 
+ * @param chunkData 
  */
 extern void processChunk(struct fileChunk *chunkData);
 
