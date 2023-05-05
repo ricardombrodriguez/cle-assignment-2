@@ -29,6 +29,9 @@ extern int currentFileIndex;
 
 int isFinished;
 
+/* Size - Number of processes (including root) */
+int size;
+
 
 
 void usage();
@@ -43,7 +46,7 @@ void usage();
 int main(int argc, char *argv[]) {
 
     /* Initialize MPI variables */
-    int rank, size;     /* Rank - Process ID | Size - Number of processes (including root)*/
+    int rank;                       /* Rank - Process ID */
     unsigned int *sequence;         /* Variable used to the array of integers of a received chunk */
     unsigned int size;              /* Variable used to store the number of integers of the chunk */
     int isSorted;                   /* Variable used to know if the chunk's integer array is sorted */
@@ -128,32 +131,36 @@ int main(int argc, char *argv[]) {
             /* Broadcast message to working processes, so that they can start asking for integer chunks */
             MPI_Bcast(&sequenceSize, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
 
+            int sequenceIdx = 0;
+
             /* For all the worker processes */
             for (nWorkers = 1; nWorkers < size; nWorkers++)
             {
                 /* Allocate memory to support a Sequence structure */
                 struct Sequence *sequence = (struct Sequence *) malloc(sizeof(struct Sequence));
 
+                sequenceIdx = nWorkers - 1;
+
                 /*Allocate memory for the chunk */
-                sequence->sequence = (unsigned int *) malloc(sequenceSize * sizeof(unsigned int));
-                sequence->isSorted = 0;
+                memset((sequence + sequenceIdx), 0, sizeof(struct Sequence));
+                (sequence + sequenceIdx)->sequence = (unsigned int *) malloc(sequenceSize * sizeof(unsigned int));
+                (sequence + sequenceIdx)->isSorted = 0;
                 /* Get chunk data */
-                
-                sequence->size = sequenceSize;
+                (sequence + sequenceIdx)->size = sequenceSize;
                 /* Last worker can have a different sequence size, since the sequences could not be splitted equally through all workers */
                 if (nWorkers == size - 1) {
-                    sequence->size = (files + currentFileIndex)->numNumbers - (chunkNumbers * (size - 2));
+                    (sequence + sequenceIdx)->size = (files + currentFileIndex)->numNumbers - (chunkNumbers * (size - 2));
                 }
             
                 getChunk(sequence, nWorkers);
 
                 MPI_Send(&isFinished, 1, MPI_INT, nWorkers, MPI_TAG_PROGRAM_STATE, MPI_COMM_WORLD);
 
-                MPI_Send(sequence->sequence, chunkNumbers, MPI_UNSIGNED, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);      /* the chunk buffer */
-                MPI_Send(&sequence->size, 1, MPI_UNSIGNED, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);                    /* the index file of the chunk */
-                MPI_Send(&sequence->isSorted, 1, MPI_INT, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);                     /* the size of the chunk */
+                MPI_Send((sequence + sequenceIdx)->sequence, chunkNumbers, MPI_UNSIGNED, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);      /* the chunk buffer */
+                MPI_Send(&(sequence + sequenceIdx)->size, 1, MPI_UNSIGNED, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);                    /* the index file of the chunk */
+                MPI_Send(&(sequence + sequenceIdx)->isSorted, 1, MPI_INT, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);                     /* the size of the chunk */
 
-                memset(sequence->chunk, 0, CHUNK_BYTE_LIMIT * sizeof(unsigned char));
+                memset((sequence + sequenceIdx)->chunk, 0, CHUNK_BYTE_LIMIT * sizeof(unsigned char));
 
     
             }
@@ -164,14 +171,11 @@ int main(int argc, char *argv[]) {
 
                 /* Receive the processing results from each worker process */
                 MPI_Recv(&sequence, chunkNumbers, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                MPI_Recv(&sequenceSize, 6, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(&sequenceSize, 1, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(&isSorted, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-                /* Update/store partial results from the processed chunk */
-                (files + fileIndex)->numWords += numWords;
-                for (int j = 0; j < 6; j++) {
-                    (files + fileIndex)->nWordsWithVowel[j] += nWordsWithVowel[j];
-                }
+                /* Update variables / sequence */
+
 
             }
 
@@ -179,28 +183,19 @@ int main(int argc, char *argv[]) {
 
 		/* Inform workers that all files are process and they can exit */
 		for (int i = 1; i < size; i++) {
-		    MPI_Send(&workStatus, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);
+		    MPI_Send(&isFinished, 1, MPI_INT, i, MPI_TAG_PROGRAM_STATE, MPI_COMM_WORLD);
         }
 
         /* Clock end */
         clock_gettime(CLOCK_MONOTONIC_RAW, &finish);
 
         /* Print the results of the text processing of all files */
-        getResults();
+        validation();
 
         /* Calculate execution time */
         printf("\eExecution time = %.6f s\n", (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0);
 
     } else {
-
-
-        /*
-        
-        workers
-        
-        
-        
-        */
 
         /* Receive brodcast message from the dispatcher */
         MPI_Bcast(&sequenceSize, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -244,209 +239,10 @@ int main(int argc, char *argv[]) {
             
         }
 
-
     }
 
     MPI_Finalize();
     exit(EXIT_SUCCESS);
-
-}
-
-
-
-
-/**
- * @brief 
- * 
- * @param threadID 
- * @return void
- */
-void *worker(void *id) {
-
-    unsigned int threadID = *((unsigned int *) id);
-
-    while (true) {
-
-        /* Mutex lock */
-        if ((pthread_mutex_lock(&mutex)) != 0) {
-            printf("[ERROR] Can't enter the mutex critical zone.");
-            pthread_exit(0);
-        }
-
-        /* Add to queue */
-        threadQueue[currentQueueIndex] = threadID;
-        currentQueueIndex++;
-        requestedJob = true;
-
-
-        if ((pthread_cond_wait(&cond, &mutex)) != 0) {
-            printf("[ERROR] pthread_cond_wait.");
-            pthread_exit(0);
-        }
-
-        if ((pthread_mutex_unlock(&mutex)) != 0) {
-            printf("[ERROR] Can't leave the mutex critical zone.");
-            pthread_exit(0);
-        }
-
-        struct chunk chunkData = sharedChunk;
-        
-        // process the chunk of data
-        processChunk(chunkData, threadID);
-
-        saveThreadResults(chunkData, threadID);
-
-        resetChunkData(chunkData, threadID);
-
-        /* Notify distributor */
-
-        /* Mutex lock */
-        if ((pthread_mutex_lock(&mutex)) != 0) {
-            printf("[ERROR] Can't enter the mutex critical zone.");
-            pthread_exit(0);
-        }
-    
-        /* Deallocate memory */
-        free(chunkData);
-
-        finishedWorkers++;
-
-        if ((pthread_cond_signal(&cond, &mutex)) != 0) {
-            printf("[ERROR] pthread_cond_signal.");
-            pthread_exit(0);
-        }
-
-        if ((pthread_mutex_unlock(&mutex)) != 0) {
-            printf("[ERROR] Can't leave the mutex critical zone.");
-            pthread_exit(0);
-        }
-
-        void* tStatus = &threadStatus[threadID];
-        pthread_exit(tStatus);
-        
-    }
-
-}
-
-
-
-// Distributor thread function
-void *distributor(char *filenames[]) {
-
-    printf("no distribuidor\n");
-    
-    int i;
-    FILE *file;
-    unsigned int numNumbers[numThreads];
-
-    for (i = 0; i < numFiles; i++) {
-
-        // Read the sequence of integers from the binary file
-        file = fopen(filenames[i], "rb");
-        if (!file) {
-            perror("Error opening file");
-            exit(1);
-        }
-
-        int numberOfValues = 0;
-        fread(&numberOfValues, sizeof(int), 1, file);
-
-        numNumbers[i] = numberOfValues;
-
-        printf("Number of values: %d\n", numberOfValues);
-
-        fclose(file);
-
-    }
-
-    /* Initialize files structure */
-    storeFilenames(filenames, numNumbers);
-
-    /* Set initializedData to true so the main.c can create the working threads */
-    if ((pthread_mutex_lock(&mutex)) != 0) {
-        printf("[ERROR] Can't enter the mutex critical zone.");
-        pthread_exit(0);
-    }
-
-    initializedData = true;
-
-    if ((pthread_cond_signal(&cond)) != 0) {
-        printf("[ERROR] pthread_cond_signal.");
-        pthread_exit(0);
-    }
-    
-    if ((pthread_mutex_unlock(&mutex)) != 0) {
-        printf("[ERROR] Can't leave the mutex critical zone.");
-        pthread_exit(0);
-    }
-
-    /* Wait for requests and assign work */
-    while (finishedWorkers < numThreads) {
-
-        /* Wait for thread request */
-        while (!requestedJob) {
-
-            if (threadQueue == empty) 
-                break;
-
-            if ((pthread_cond_wait(&request_cond, &mutex)) != 0) {
-                printf("[ERROR] pthread_cond_wait.");
-                pthread_exit(0);
-            }
-
-        }
-
-        /* Delegate job */
-
-        int threadID = threadQueue[0];
-
-        sharedChunk = getChunk();
-
-
-        /* Mutex unlock */
-        if ((pthread_mutex_unlock(&mutex)) != 0) {
-            printf("[ERROR] Can't leave the mutex critical zone.");
-            pthread_exit(0);
-        }
-        
-        // distribute the chunk to the workers
-        for (int i = 0; i < NUM_WORKERS; i++) {
-            
-            // check if worker is finished processing its own chunk
-            if (i == start_index / CHUNK_SIZE) {
-                continue;
-            }
-            
-            // send the chunk to the worker
-            if ((pthread_mutex_lock(&mutex)) != 0) {
-                printf("[ERROR] Can't enter the mutex critical zone.");
-                pthread_exit(0);
-            }
-
-            memcpy(sharedChunk, &start_index, sizeof(start_index));
-
-            if ((pthread_cond_signal(&cond)) != 0) {
-                printf("[ERROR] pthread_cond_signal.");
-                pthread_exit(0);
-            }
-
-            if ((pthread_mutex_unlock(&mutex)) != 0) {
-                printf("[ERROR] Can't unlock the mutex critical zone.");
-                pthread_exit(0);
-            }
-
-
-        }
-        
-        // wait for all workers to finish processing the chunk
-        pthread_mutex_lock(&mutex);
-        while (finished_workers < start_index / CHUNK_SIZE) {
-            pthread_cond_wait(&cond, &mutex);
-        }
-
-        pthread_mutex_unlock(&mutex);
-
-    }
 
 }
 

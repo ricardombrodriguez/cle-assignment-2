@@ -22,6 +22,9 @@ int currentFileIndex = 0;
 /* Bool to check if all files were processed */
 extern bool filesFinished;
 
+/* Size - Number of processes (including root) */
+extern int size;
+
 
 /**
  * @brief Get the text file names by processing the command line and storing them in the shared region for future retrieval by worker threads
@@ -46,6 +49,8 @@ void storeFilenames(char *filenames[], unsigned int numNumbers[], int size) {
         (files + i)->fileIndex = i;
         fread(&(files + i)->filename->numNumbers, sizeof(int), 1, file);
         (files + i)->chunkSize = (unsigned int) ceil((files + i)->filename->numNumbers / (size - 1)); /* Not counting with the root process */
+        (files + i)->sortedSequences[size-1] = {0};
+        (files + i)->mergedSequences[size-1] = {-1};  
         (files + i)->isFinished = 0;
 
         int j = 0;
@@ -75,77 +80,23 @@ void getChunk(struct Sequence *sequence, int rank) {
     /* There are files still remanining to be processed */
     if (currentFileIndex < numFiles) {
 
-        for (int i = 0; i < sequence->size; i++) {
-            sequence->sequence[i] = (files + currentFileIndex)->fullSequence[rank * sequence->size + i];
+        int sequenceIdx = nWorkers - 1;
+
+        /* The process' sequence is not sorted yet (first step of the merge sort) */
+        if (!(files + currentFileIndex)->sortedSequences[rank-1]) {
+            for (int i = 0; i < (sequence + sequenceIdx)->size; i++) {
+                (sequence + sequenceIdx)->sequence[i] = (files + currentFileIndex)->fullSequence[rank * sequence->size + i];
+            }
+        } else {
+            /* Search for two sequences that need to be merged (with -2 values) */
+            for (int i = 0; i < size - 1; i++) {
+                
+            }
         }
 
     }
 
 }
-
-
-
-/**
- * @brief
- *
- * @param chunkData
- * @param threadID
- */
-void saveThreadResults(struct chunk *chunkData, unsigned int threadID) {
-
-    int error;
-
-    /* Mutex lock */
-    if ((error = pthread_mutex_lock(&count_mutex)) != 0) {
-        printf("[ERROR] Can't enter the mutex critical zone.");
-        pthread_exit(0);
-    }
-
-    for (int i = 0; i < chunkData->chunkSize; i++) {
-
-        (files + currentFileIndex)->sortedList[bufferIndex+i] = chunkData->chunkList[i];
-
-    }
-
-    //printf("[THREAD %d] File %s: %d words, %d words with A vowel, %d words with E vowels", threadID, (files + chunkData->fileIndex)->filename, chunkData->numWords, chunkData->nWordsWithVowel[0], chunkData->nWordsWithVowel[1]);
-
-    /* Mutex unlock */
-    if ((pthread_mutex_unlock(&count_mutex)) != 0) {
-        printf("[ERROR] Can't leave the mutex critical zone.");
-        pthread_exit(0);
-    }
-}
-
-/**
- * @brief Get the Chunk object
- *
- * @param chunkData
- * @param threadID
- */
-struct chunk getChunk(unsigned int threadID) {
-
-    int error;
-
-    /* Mutex lock */
-    if ((error = pthread_mutex_lock(&count_mutex)) != 0) {
-        printf("[ERROR] Can't enter the mutex critical zone.");
-        pthread_exit(0);
-    }
-
-    /* Allocate memory to support a chunk structure */
-    struct chunk *chunkData = (struct chunk *)malloc(sizeof(struct chunk));
-    chunkData->chunkList = (int *) malloc(files->chunkSize * sizeof(int));
-    chunkData->sortedListOffset = bufferIndex;
-
-v
-
-    /* Mutex unlock */
-    if ((pthread_mutex_unlock(&count_mutex)) != 0) {
-        printf("[ERROR] Can't leave the mutex critical zone.");
-        pthread_exit(0);
-    }
-}
-
 
 /**
  * @brief Get the Results object
@@ -172,19 +123,16 @@ int validation() {
 
 
 
-void resetFilesData() {
-    files = (struct file *){0};
+void resetChunkData(struct Sequence *sequence) {
+    memset(&sequence, 0, sizeof(Sequence));
 }
 
 
-/**
- * @brief
- *
- * @param chunkData
- */
-void resetChunkData(struct chunk *chunkData) {
-    chunkData->chunkList = (int *)malloc((files + currentFileIndex)->chunkSize * sizeof(int));
+
+void resetFilesData(struct fileInfo *files) {
+    memset(&files, 0, sizeof(fileInfo));
 }
+
 
 
 void bitonic_merge(int arr[], int low, int cnt, int dir) {
