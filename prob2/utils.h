@@ -8,6 +8,32 @@
 #ifndef UTILS_H
 # define UTILS_H
 
+/**
+ * @brief Information about the file (name and pointer) and reference to the file sorted sequence (final state)
+ * 
+ */
+struct fileInfo {
+    char *filename;
+    FILE *fp;
+    unsigned int fileIndex;
+    int numNumbers;
+    unsigned int chunkSize;
+    unsigned int *fullSequence;
+    int isFinished;
+};
+
+/**
+ * @brief Structure that stores the integer sequence, the size (number of integers of the sequence) and a boolean
+ * variable *isSorted* to know if sequence is sorted (or not)
+ * 
+ */
+struct Sequence {
+    unsigned int sequence;
+    unsigned int size;
+    int isSorted;
+};
+
+
 /** \brief get the determinant of given matrix */
 extern double getDeterminant(int order, double *matrix); 
 
