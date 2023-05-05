@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
     int rank;                       /* Rank - Process ID */
     unsigned int *sequence;         /* Variable used to the array of integers of a received chunk */
     unsigned int size;              /* Variable used to store the number of integers of the chunk */
-    int isSorted;                   /* Variable used to know if the chunk's integer array is sorted */
+    int status;                   /* Variable used to know if the chunk's integer array is sorted */
     unsigned int sequenceSize;
 
     /* Initialize the MPI communicator and get the rank of processes and the count of processes */
@@ -144,7 +144,7 @@ int main(int argc, char *argv[]) {
                 /*Allocate memory for the chunk */
                 memset((sequence + sequenceIdx), 0, sizeof(struct Sequence));
                 (sequence + sequenceIdx)->sequence = (unsigned int *) malloc(sequenceSize * sizeof(unsigned int));
-                (sequence + sequenceIdx)->isSorted = 0;
+                (sequence + sequenceIdx)->status = SEQUENCE_UNSORTED;
                 /* Get chunk data */
                 (sequence + sequenceIdx)->size = sequenceSize;
                 /* Last worker can have a different sequence size, since the sequences could not be splitted equally through all workers */
@@ -152,13 +152,14 @@ int main(int argc, char *argv[]) {
                     (sequence + sequenceIdx)->size = (files + currentFileIndex)->numNumbers - (chunkNumbers * (size - 2));
                 }
             
-                getChunk(sequence, nWorkers);
+                /* Ver se faz sentido o que está em cima e em baixo!!!!! */
+                squence_index_ = getChunk(sequence, nWorkers);
 
                 MPI_Send(&isFinished, 1, MPI_INT, nWorkers, MPI_TAG_PROGRAM_STATE, MPI_COMM_WORLD);
 
                 MPI_Send((sequence + sequenceIdx)->sequence, chunkNumbers, MPI_UNSIGNED, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);      /* the chunk buffer */
                 MPI_Send(&(sequence + sequenceIdx)->size, 1, MPI_UNSIGNED, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);                    /* the index file of the chunk */
-                MPI_Send(&(sequence + sequenceIdx)->isSorted, 1, MPI_INT, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);                     /* the size of the chunk */
+                MPI_Send(&(sequence + sequenceIdx)->status, 1, MPI_INT, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);                     /* the size of the chunk */
 
                 memset((sequence + sequenceIdx)->chunk, 0, CHUNK_BYTE_LIMIT * sizeof(unsigned char));
 
@@ -172,7 +173,7 @@ int main(int argc, char *argv[]) {
                 /* Receive the processing results from each worker process */
                 MPI_Recv(&sequence, chunkNumbers, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(&sequenceSize, 1, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                MPI_Recv(&isSorted, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(&status, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
                 /* Update variables / sequence */
 
@@ -204,7 +205,7 @@ int main(int argc, char *argv[]) {
         struct Sequence *sequence = (struct Sequence *) malloc(sizeof(struct Sequence));
         /*Allocate memory for the chunk */
         sequence->sequence = (unsigned int *) malloc(sequenceSize * sizeof(unsigned int));
-        sequence->isSorted = 0;
+        sequence->status = SEQUENCE_UNSORTED;
         sequence->size = 0;
 
         while (true)

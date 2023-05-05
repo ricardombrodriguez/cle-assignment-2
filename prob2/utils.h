@@ -39,7 +39,7 @@ struct fileInfo {
 struct Sequence {
     unsigned int sequence;
     unsigned int size;
-    int isSorted;
+    int status;
 };
 
 

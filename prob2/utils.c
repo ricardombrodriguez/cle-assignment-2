@@ -74,8 +74,7 @@ void storeFilenames(char *filenames[], unsigned int numNumbers[], int size) {
 
 
 
-
-void getChunk(struct Sequence *sequence, int rank) {
+int getChunk(struct Sequence *sequence, int rank) {
 
     /* There are files still remanining to be processed */
     if (currentFileIndex < numFiles) {
@@ -86,12 +85,42 @@ void getChunk(struct Sequence *sequence, int rank) {
         if (!(files + currentFileIndex)->sortedSequences[rank-1]) {
             for (int i = 0; i < (sequence + sequenceIdx)->size; i++) {
                 (sequence + sequenceIdx)->sequence[i] = (files + currentFileIndex)->fullSequence[rank * sequence->size + i];
+                return sequenceIdx;
             }
         } else {
+
+            int sequencesToMerge[2] = {-1};
+            int sequenceToMergeIdx = 0;
+
             /* Search for two sequences that need to be merged (with -2 values) */
             for (int i = 0; i < size - 1; i++) {
-                
+
+                /* Check for two sorted sequences that can be merged together */
+                if ((sequence + sequenceIdx)->mergedSequences[i] == SEQUENCE_SORTED) {
+                    sequencesToMerge[sequenceToMergeIdx++] = sequenceIdx;
+                } 
+
+                /* Already found to sequences to merge! */
+                if (sequenceToMergeIdx >= 2) {
+                    (sequence + sequencesToMerge[0])->status = SEQUENCE_BEING_MERGED;   /* Make second sequence obsolete, as it will be merged into the 1st one */
+                    (sequence + sequencesToMerge[1])->status = SEQUENCE_OBSOLETE;   /* Make second sequence obsolete, as it will be merged into the 1st one */
+                    (sequence + sequencesToMerge[0])->size += (sequence + sequencesToMerge[1])->size    /* New sequence will have the size of both sequences size */
+                    (sequence + sequencesToMerge[0])->sequence = (unsigned int *) realloc((sequence + sequencesToMerge[0])->size * unsigned int);
+                    for (int j = 0; j < (sequence + sequencesToMerge[1])->size; j++) {
+                        (sequence + sequencesToMerge[0])->sequence[ (sequence + sequencesToMerge[0])->size + j] = (sequence + sequencesToMerge[1])->sequence[j];
+                    }
+                }
+
             }
+
+            /* There are not 2 sequences ready to be merged, reached the end with one final sequence */
+            if (sequenceToMergeIdx < 2) {
+                /* Returned sequence will be the one with index 0 (last one with full sequence) */
+                /* fazer isto no process chunk? ou criar função para verificar se falta dar get de mais algum chunk para processar! */
+                return ;  /*  */
+            }
+
+            return sequencesToMerge[0];
         }
 
     }

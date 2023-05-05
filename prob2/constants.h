@@ -25,4 +25,20 @@
 /** \brief MPI tag to identify a message with partial results from a chunk */
 #define MPI_TAG_SEND_RESULTS 2
 
+/** \brief Identify an unsorted sequence */
+#define SEQUENCE_UNSORTED 0
+
+/** \brief Identify an unsorted sequence */
+#define SEQUENCE_SORTED 1
+
+/** \brief Identify a sequence that is currently being merged */
+#define SEQUENCE_BEING_MERGED 2
+
+/** \brief Identify a merged sequence (the sequence was merged and sorted into another sequence and is no longer needed) */
+#define SEQUENCE_OBSOLETE 3
+
+/** \brief Identify the sequence with all the file numbers sorted */
+#define SEQUENCE_FINAL 4
+
+
 #endif /* CONSTANTS_H */
