@@ -27,9 +27,11 @@ extern int size;
 
 
 /**
- * @brief Get the text file names by processing the command line and storing them in the shared region for future retrieval by worker threads
- *
- * @param filenames
+ * @brief Get the text file names by processing the command line and storing them for future retrieval/update by processes
+ * 
+ * @param filenames 
+ * @param numNumbers 
+ * @param size 
  */
 void storeFilenames(char *filenames[], unsigned int numNumbers[], int size) {
     
@@ -85,7 +87,22 @@ void storeFilenames(char *filenames[], unsigned int numNumbers[], int size) {
 
 }
 
-
+/**
+ * @brief Function to return the index position of the Sequence structure that will be sent to the worker thread for future processing
+ * 
+ * First, it looks for a Sequence in the allSequences variable which is unsorted (first step of the merge sort process), with the status
+ * SEQUENCE_UNSORTED. If that's the case, we will fill the sequence variable, which will store the unsorted chunk of integers and return
+ * the index of that Sequence structure to send it to the workers.
+ *
+ * If all sequences are already sorted (the program does not return in the first loop), we should look for two already sorted chunks/sequences
+ * that can be merged into one. If we have sequence A and B, the sequence B will be 'appended' to sequence A. Because of that, we can make sequence
+ * B obsolete (it wont be used in the future), since sequence A is the merged solution of A and B.
+ *
+ * If the conditions explained above doesn't happen, there isn't any chunk to get (we already have a merged sequence that corresponds to the file sorted
+ * array of integers), returning -1.
+ * 
+ * @return int 
+ */
 int getChunk() {
 
     /* There are files still remanining to be processed */
