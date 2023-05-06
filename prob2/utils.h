@@ -19,15 +19,7 @@ struct fileInfo {
     int numNumbers;
     unsigned int chunkSize;
     unsigned int *fullSequence;
-    /*Array of integers to know if the sequence of that index is sorted (1) or not (0) */
-    int sortedSequences[size-1]; 
-    /**
-        * Array of integers to know if the sequence of that index is merged with another sequence 
-        * (>= 0 and the value corresponds to the index of the other sequence) or not (-2).
-        * If the sequence was already merged into another sequence and is no longer needed, the
-        * value is -1.
-    */
-    int mergedSequences[size-1] = {-2};   
+    struct Sequence **allSequences; 
     int isFinished;
 };
 

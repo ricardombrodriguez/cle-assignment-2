@@ -49,8 +49,23 @@ void storeFilenames(char *filenames[], unsigned int numNumbers[], int size) {
         (files + i)->fileIndex = i;
         fread(&(files + i)->filename->numNumbers, sizeof(int), 1, file);
         (files + i)->chunkSize = (unsigned int) ceil((files + i)->filename->numNumbers / (size - 1)); /* Not counting with the root process */
-        (files + i)->sortedSequences[size-1] = {0};
-        (files + i)->mergedSequences[size-1] = {-1};  
+        (files + i)->allSequences = (struct Sequence**)malloc((size-1) * sizeof(struct Sequence));
+
+        for (int j = 0; j < sizes-1; j++) {
+
+                        /*Allocate memory for the chunk */
+            memset((files + i)->allSequences[j], 0, sizeof(struct Sequence));
+            (files + i)->allSequences[j]->sequence = (unsigned int *) malloc(sequenceSize * sizeof(unsigned int));
+            (files + i)->allSequences[j]->status = SEQUENCE_UNSORTED;
+            /* Get chunk data */
+            (files + i)->allSequences[j]->size = sequenceSize;
+            /* Last worker can have a different sequence size, since the sequences could not be splitted equally through all workers */
+            if (j == size - 1) {
+                (files + i)->allSequences[j]->size = (files + currentFileIndex)->numNumbers - (chunkNumbers * (size - 2));
+            }
+
+        }
+
         (files + i)->isFinished = 0;
 
         int j = 0;
@@ -71,57 +86,55 @@ void storeFilenames(char *filenames[], unsigned int numNumbers[], int size) {
 }
 
 
-
-
-
-int getChunk(struct Sequence *sequence, int rank) {
+int getChunk() {
 
     /* There are files still remanining to be processed */
     if (currentFileIndex < numFiles) {
 
-        int sequenceIdx = nWorkers - 1;
+        /* Search for unsorted sequences that need to be sorted */
+        for (int idx = 0; idx < sizes-1; idx++) {
 
-        /* The process' sequence is not sorted yet (first step of the merge sort) */
-        if (!(files + currentFileIndex)->sortedSequences[rank-1]) {
-            for (int i = 0; i < (sequence + sequenceIdx)->size; i++) {
-                (sequence + sequenceIdx)->sequence[i] = (files + currentFileIndex)->fullSequence[rank * sequence->size + i];
-                return sequenceIdx;
-            }
-        } else {
+            if ((files + currentFileIndex)->allSequences[idx]->status == SEQUENCE_UNSORTED) {
 
-            int sequencesToMerge[2] = {-1};
-            int sequenceToMergeIdx = 0;
-
-            /* Search for two sequences that need to be merged (with -2 values) */
-            for (int i = 0; i < size - 1; i++) {
-
-                /* Check for two sorted sequences that can be merged together */
-                if ((sequence + sequenceIdx)->mergedSequences[i] == SEQUENCE_SORTED) {
-                    sequencesToMerge[sequenceToMergeIdx++] = sequenceIdx;
-                } 
-
-                /* Already found to sequences to merge! */
-                if (sequenceToMergeIdx >= 2) {
-                    (sequence + sequencesToMerge[0])->status = SEQUENCE_BEING_MERGED;   /* Make second sequence obsolete, as it will be merged into the 1st one */
-                    (sequence + sequencesToMerge[1])->status = SEQUENCE_OBSOLETE;   /* Make second sequence obsolete, as it will be merged into the 1st one */
-                    (sequence + sequencesToMerge[0])->size += (sequence + sequencesToMerge[1])->size    /* New sequence will have the size of both sequences size */
-                    (sequence + sequencesToMerge[0])->sequence = (unsigned int *) realloc((sequence + sequencesToMerge[0])->size * unsigned int);
-                    for (int j = 0; j < (sequence + sequencesToMerge[1])->size; j++) {
-                        (sequence + sequencesToMerge[0])->sequence[ (sequence + sequencesToMerge[0])->size + j] = (sequence + sequencesToMerge[1])->sequence[j];
-                    }
+                for (int i = 0; i < (files + currentFileIndex)->allSequences[idx]->size; i++) {
+                    (files + currentFileIndex)->allSequences[idx]->sequence[i] = (files + currentFileIndex)->fullSequence[idx * (files + currentFileIndex)->allSequences[idx] + i];
                 }
 
+                (files + currentFileIndex)->allSequences[idx]->status = SEQUENCE_SORTED;
+                return idx;
             }
 
-            /* There are not 2 sequences ready to be merged, reached the end with one final sequence */
-            if (sequenceToMergeIdx < 2) {
-                /* Returned sequence will be the one with index 0 (last one with full sequence) */
-                /* fazer isto no process chunk? ou criar função para verificar se falta dar get de mais algum chunk para processar! */
-                return ;  /*  */
-            }
-
-            return sequencesToMerge[0];
         }
+
+        
+        int sequencesToMerge[2] = {-1};
+        int sequenceToMergeIdx = 0;
+
+        /* Search for two sequences that need to be merged (with -2 values) */
+        for (int i = 0; i < size - 1; i++) {
+
+            /* Check for two sorted sequences that can be merged together */
+            if ((files + currentFileIndex)->allSequences[idx]->mergedSequences[i] == SEQUENCE_SORTED) {
+                sequencesToMerge[sequenceToMergeIdx++] = sequenceIdx;
+            } 
+
+            /* Already found to sequences to merge! */
+            if (sequenceToMergeIdx >= 2) {
+                ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->status = SEQUENCE_BEING_MERGED;   /* Make second sequence obsolete, as it will be merged into the 1st one */
+                ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->status = SEQUENCE_OBSOLETE;   /* Make second sequence obsolete, as it will be merged into the 1st one */
+                ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size += (sequence + sequencesToMerge[1])->size    /* New sequence will have the size of both sequences size */
+                ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence = (unsigned int *) realloc(((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size * unsigned int);
+                for (int j = 0; j < ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->size; j++) {
+                    ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence[ ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size + j] = ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->sequence[j];
+                }
+                return sequencesToMerge[0];
+            }
+
+        }
+
+
+        /* Nothing to process */
+        return -1;
 
     }
 
