@@ -29,6 +29,8 @@ int currentFileIndex = 0;
 
 int isFinished;
 
+int size;
+
 
 void usage();
 
@@ -42,7 +44,7 @@ void usage();
 int main(int argc, char *argv[]) {
 
     /* Initialize MPI variables */
-    int rank, size;                       /* Rank - Process ID | Size - Number of processes (including root) */
+    int rank;                       /* Rank - Process ID | Size - Number of processes (including root) */
     unsigned int *sequence;         /* Variable used to the array of integers of a received chunk */
     int status;                   /* Variable used to know if the chunk's integer array is sorted */
     unsigned int sequenceSize;
