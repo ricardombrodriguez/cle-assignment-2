@@ -50,19 +50,19 @@ void storeFilenames(char *filenames[], int size) {
             exit(EXIT_FAILURE);
         }
 
-        printf("aqui porra\n");
-
         (files + i)->fileIndex = i;
-        if (fread(&(files + i)->numNumbers, sizeof(int), 1,(files + i)->fp )) {
+        if (fread(&(files + i)->numNumbers, sizeof(int), 1,(files + i)->fp ) != 1) {
+
             printf("[ERROR] Can't read the first line of the file\n");
             exit(EXIT_FAILURE);
         }
         (files + i)->chunkSize = (unsigned int) ceil((files + i)->numNumbers / (size - 1)); /* Not counting with the root process */
-        (files + i)->allSequences = (struct Sequence**)malloc((size-1) * sizeof(struct Sequence));
+        (files + i)->allSequences = (struct Sequence**)malloc((size-1) * sizeof(struct Sequence*));
+
 
         for (int j = 0; j < size-1; j++) {
-
             /*Allocate memory for the chunk */
+            (files + i)->allSequences[j] = (struct Sequence*)malloc(sizeof(struct Sequence));
             memset((files + i)->allSequences[j], 0, sizeof(struct Sequence));
             (files + i)->allSequences[j]->sequence = (unsigned int *) malloc((files + i)->chunkSize * sizeof(unsigned int));
             (files + i)->allSequences[j]->status = SEQUENCE_UNSORTED;
@@ -72,10 +72,13 @@ void storeFilenames(char *filenames[], int size) {
             if (j == size - 1) {
                 (files + i)->allSequences[j]->size = (files + i)->numNumbers - ((files + i)->chunkSize * (size - 2));
             }
-
         }
-
+        
         (files + i)->isFinished = 0;
+
+        /* Allocate memory for the full sequence */
+        (files + i)->fullSequence = (unsigned int *) malloc((files + i)->numNumbers * sizeof(unsigned int));
+
 
         int j = 0;
         while (fread(&(files + i)->fullSequence[j], sizeof(unsigned int), 1, (files + i)->fp) == 1) {
@@ -84,12 +87,10 @@ void storeFilenames(char *filenames[], int size) {
         fclose((files + i)->fp);
 
         // Print the numbers in the array
-        printf("Numbers in the array:\n");
-        for (int k = 0; k < (files + i)->numNumbers; k++) {
-            printf("%d ", (files + i)->fullSequence[k]);
-        }
-        printf("\n");
-
+        //printf("Numbers in the array:\n");
+        //for (int k = 0; k < (files + i)->numNumbers; k++) {
+        //    printf("%d ", (files + i)->fullSequence[k]);
+        //}
     }
 
 }
