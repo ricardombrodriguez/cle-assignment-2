@@ -8,6 +8,10 @@
 #ifndef UTILS_H
 # define UTILS_H
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 /**
  * @brief Information about the file (name and pointer) and reference to the file sorted sequence (final state)
  * 
@@ -29,7 +33,7 @@ struct fileInfo {
  * 
  */
 struct Sequence {
-    unsigned int sequence;
+    unsigned int *sequence;
     unsigned int size;
     int status;
 };
@@ -39,10 +43,9 @@ struct Sequence {
  * @brief Get the text file names by processing the command line and storing them for future retrieval/update by processes
  * 
  * @param filenames 
- * @param numNumbers 
  * @param size 
  */
-extern void storeFilenames(char *filenames[], unsigned int numNumbers[], int size);
+extern void storeFilenames(char *filenames[], int size);
 
 /**
  * @brief Function to return the index position of the Sequence structure that will be sent to the worker thread for future processing
@@ -63,16 +66,25 @@ extern void storeFilenames(char *filenames[], unsigned int numNumbers[], int siz
 extern int getChunk();
 
 
+extern void processChunk(int sequenceIdx);
+
+extern int validation();
+
+extern void resetChunkData(struct Sequence *sequence);
+
+extern void resetFilesData(struct fileInfo *files);
+
+
 /** \brief get the determinant of given matrix */
 extern double getDeterminant(int order, double *matrix); 
 
-extern void bitonic_merge(int arr[], int low, int cnt, int dir);
+extern void bitonic_merge(unsigned int arr[], int low, int cnt, int dir);
 
-extern void bitonic_sort_recursive(int arr[], int low, int cnt, int dir);
+extern void bitonic_sort_recursive(unsigned int arr[], int low, int cnt, int dir);
 
-extern void bitonic_sort(int arr[], int n);
+extern void bitonic_sort(unsigned int arr[], int n);
 
-extern void merge_sorted_arrays(int *arr1, int n1, int *arr2, int n2, int *result);
+extern void merge_sorted_arrays(unsigned int *arr1, int n1, unsigned int *arr2, int n2, unsigned int *result);
 
 
 #endif /* UTILS_H */

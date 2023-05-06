@@ -22,16 +22,12 @@
 unsigned int numFiles;
 
 /* File sructure initialization */
-extern struct file *files;
+struct fileInfo *files;
 
 /* Stores the index of the current file being proccessed by the working threads */
-extern int currentFileIndex;
+int currentFileIndex = 0;
 
 int isFinished;
-
-/* Size - Number of processes (including root) */
-int size;
-
 
 
 void usage();
@@ -46,9 +42,8 @@ void usage();
 int main(int argc, char *argv[]) {
 
     /* Initialize MPI variables */
-    int rank;                       /* Rank - Process ID */
+    int rank, size;                       /* Rank - Process ID | Size - Number of processes (including root) */
     unsigned int *sequence;         /* Variable used to the array of integers of a received chunk */
-    unsigned int size;              /* Variable used to store the number of integers of the chunk */
     int status;                   /* Variable used to know if the chunk's integer array is sorted */
     unsigned int sequenceSize;
 
@@ -69,7 +64,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    const char *optstr = "t:f:h";
+    const char *optstr = "f:h";
     int option;
     char *filenames[MAX_NUM_FILES];
 
@@ -83,13 +78,6 @@ int main(int argc, char *argv[]) {
 
         while ((option = getopt(argc, argv, optstr)) != -1) {
             switch (option) {
-                case 't':
-                    if (atoi(optarg) < 1 || atoi(optarg) > 8) {
-                        fprintf(stderr, "Invalid number of threads (must be >= 1 and <= 8)");
-                        return EXIT_FAILURE;
-                    }
-                    numThreads = atoi(optarg);
-                    break;
                 case 'f':
                     filenames[numFiles++] = optarg;
                     while (optind < argc && argv[optind][0] != '-') {
@@ -117,7 +105,7 @@ int main(int argc, char *argv[]) {
         files = (struct fileInfo *)malloc(numFiles * sizeof(struct fileInfo));
 
         /* Initialize fileInfo structure (setup and store filenames) */
-        storeFilenames(files, filenames, size);
+        storeFilenames(filenames, size);
 
         /* Keep track of the current worker's rank ID */
         int nWorkers = 0;
@@ -141,12 +129,10 @@ int main(int argc, char *argv[]) {
 
                 MPI_Send(&isFinished, 1, MPI_INT, nWorkers, MPI_TAG_PROGRAM_STATE, MPI_COMM_WORLD);
 
-                MPI_Send((files + currentFileIndex)->allSequences[sequenceIdx])->sequence, chunkNumbers, MPI_UNSIGNED, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);      /* the chunk buffer */
-                MPI_Send(&(files + currentFileIndex)->allSequences[sequenceIdx])->size, 1, MPI_UNSIGNED, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);                    /* the index file of the chunk */
-                MPI_Send(&(files + currentFileIndex)->allSequences[sequenceIdx])->status, 1, MPI_INT, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);                     /* the size of the chunk */
-
-                memset((files + currentFileIndex)->allSequences[sequenceIdx])->chunk, 0, CHUNK_BYTE_LIMIT * sizeof(unsigned char));
-
+                MPI_Send(&(files + currentFileIndex)->allSequences[sequenceIdx]->sequence, sequenceSize, MPI_UNSIGNED, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);     
+                MPI_Send(&(files + currentFileIndex)->allSequences[sequenceIdx]->size, 1, MPI_UNSIGNED, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);
+                MPI_Send(&(files + currentFileIndex)->allSequences[sequenceIdx]->status, 1, MPI_INT, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);             
+                MPI_Send(&sequenceIdx, 1, MPI_INT, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);          
     
             }
 
@@ -155,16 +141,17 @@ int main(int argc, char *argv[]) {
             {
 
                 /* Receive the processing results from each worker process */
-                MPI_Recv(&sequence, chunkNumbers, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(&sequence, sequenceSize, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(&sequenceSize, 1, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(&status, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(&sequenceIdx, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
                 /* Update variables / sequence */
 
                 int sequencesToMerge = 0;
 
                 /* Search for unsorted sequences that need to be sorted */
-                for (int idx = 0; idx < sizes-1; idx++) {
+                for (int idx = 0; idx < size-1; idx++) {
 
                     if ((files + currentFileIndex)->allSequences[idx]->status == SEQUENCE_SORTED) {
 
@@ -181,9 +168,9 @@ int main(int argc, char *argv[]) {
                 /* We have the final sequence */
                 if (sequencesToMerge == 1) {
 
-                    int finalSequenceIdx;
+                    int finalSequenceIdx = -1;
 
-                    for (int idx = 0; idx < sizes-1; idx++) {
+                    for (int idx = 0; idx < size-1; idx++) {
                         if ((files + currentFileIndex)->allSequences[idx]->status == SEQUENCE_SORTED) {
                             finalSequenceIdx = idx;
                             break;
@@ -235,10 +222,13 @@ int main(int argc, char *argv[]) {
 
         /* Allocate memory to support a Sequence structure */
         struct Sequence *sequence = (struct Sequence *) malloc(sizeof(struct Sequence));
+
         /*Allocate memory for the chunk */
-        sequence->sequence = (unsigned int *) malloc(sequenceSize * sizeof(unsigned int));
+        sequence->sequence = (unsigned int *)malloc(sequenceSize * sizeof(unsigned int));
         sequence->status = SEQUENCE_UNSORTED;
         sequence->size = 0;
+
+        int sequenceIdx;
 
         while (true)
         {
@@ -250,9 +240,10 @@ int main(int argc, char *argv[]) {
             if (isFinished)
                 break;
 
-            MPI_Recv(sequence->sequence, chunkNumbers, MPI_UNSIGNED,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);     
+            MPI_Recv(sequence->sequence, sequenceSize, MPI_UNSIGNED,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);     
             MPI_Recv(&sequence->size, 1, MPI_UNSIGNED,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);                   
-            MPI_Recv(&sequence->status, 1, MPI_INT,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);                     
+            MPI_Recv(&sequence->status, 1, MPI_INT,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);     
+            MPI_Recv(&sequenceIdx, 1, MPI_INT,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);                                     
 
             /* Process the received chunk */
             /**
@@ -261,11 +252,12 @@ int main(int argc, char *argv[]) {
              * Se tiver BEING_SORTED passar SORTED
              * 
              */
-            processChunk(sequence);
+            processChunk(sequenceIdx);
 
-            MPI_Send(sequence->sequence, chunkNumbers, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);    
+            MPI_Send(sequence->sequence, sequenceSize, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);    
             MPI_Send(&sequence->size, 1, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);                    
-            MPI_Send(&sequence->status, 1, MPI_INT, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);                   
+            MPI_Send(&sequence->status, 1, MPI_INT, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);  
+            MPI_Send(&sequenceIdx, 1, MPI_INT, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);                   
 
             /* Reset chunk data */
             resetChunkData(sequence);

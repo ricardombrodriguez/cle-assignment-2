@@ -1,9 +1,11 @@
 
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 
-#include "sharedRegion.h"
-#include "sharedRegion.c"
+#include "utils.h"
+#include "constants.h"
 
 /**
  * @brief Resets the file structure for the next iteration of the program (new number of threads)
@@ -11,16 +13,16 @@
  */
 
 
-extern struct file *files;
+extern struct fileInfo *files;
 
 /* Number of files to be processed */
-extern int numFiles;
+extern unsigned int numFiles;
 
 /* Stores the index of the current file being proccessed by the working threads */
-int currentFileIndex = 0;
+extern int currentFileIndex;
 
 /* Bool to check if all files were processed */
-extern bool filesFinished;
+extern int filesFinished;
 
 /* Size - Number of processes (including root) */
 extern int size;
@@ -30,10 +32,9 @@ extern int size;
  * @brief Get the text file names by processing the command line and storing them for future retrieval/update by processes
  * 
  * @param filenames 
- * @param numNumbers 
  * @param size 
  */
-void storeFilenames(char *filenames[], unsigned int numNumbers[], int size) {
+void storeFilenames(char *filenames[], int size) {
     
     // Allocate memory dynamically using the malloc function to create an array of numFiles elements of struct 'file' type
     files = (struct fileInfo *) malloc(numFiles * sizeof(struct fileInfo));
@@ -46,24 +47,27 @@ void storeFilenames(char *filenames[], unsigned int numNumbers[], int size) {
         (files + i)->fp = fopen((files + i)->filename, "rb");
         if ( (files + i)->fp == NULL) {
             printf("[ERROR] Can't open file %s\n", (files + i)->filename);
-            exit(1);
+            exit(EXIT_FAILURE);
         }
         (files + i)->fileIndex = i;
-        fread(&(files + i)->filename->numNumbers, sizeof(int), 1, file);
-        (files + i)->chunkSize = (unsigned int) ceil((files + i)->filename->numNumbers / (size - 1)); /* Not counting with the root process */
+        if (fread(&(files + i)->numNumbers, sizeof(int), 1,(files + i)->fp )) {
+            printf("[ERROR] Can't read the first line of the file\n");
+            exit(EXIT_FAILURE);
+        }
+        (files + i)->chunkSize = (unsigned int) ceil((files + i)->numNumbers / (size - 1)); /* Not counting with the root process */
         (files + i)->allSequences = (struct Sequence**)malloc((size-1) * sizeof(struct Sequence));
 
-        for (int j = 0; j < sizes-1; j++) {
+        for (int j = 0; j < size-1; j++) {
 
-                        /*Allocate memory for the chunk */
+            /*Allocate memory for the chunk */
             memset((files + i)->allSequences[j], 0, sizeof(struct Sequence));
-            (files + i)->allSequences[j]->sequence = (unsigned int *) malloc(sequenceSize * sizeof(unsigned int));
+            (files + i)->allSequences[j]->sequence = (unsigned int *) malloc((files + i)->chunkSize * sizeof(unsigned int));
             (files + i)->allSequences[j]->status = SEQUENCE_UNSORTED;
             /* Get chunk data */
-            (files + i)->allSequences[j]->size = sequenceSize;
+            (files + i)->allSequences[j]->size = (files + i)->chunkSize;
             /* Last worker can have a different sequence size, since the sequences could not be splitted equally through all workers */
             if (j == size - 1) {
-                (files + i)->allSequences[j]->size = (files + currentFileIndex)->numNumbers - (chunkNumbers * (size - 2));
+                (files + i)->allSequences[j]->size = (files + i)->numNumbers - ((files + i)->chunkSize * (size - 2));
             }
 
         }
@@ -109,12 +113,12 @@ int getChunk() {
     if (currentFileIndex < numFiles) {
 
         /* Search for unsorted sequences that need to be sorted */
-        for (int idx = 0; idx < sizes-1; idx++) {
+        for (int idx = 0; idx < size-1; idx++) {
 
             if ((files + currentFileIndex)->allSequences[idx]->status == SEQUENCE_UNSORTED) {
 
                 for (int i = 0; i < (files + currentFileIndex)->allSequences[idx]->size; i++) {
-                    (files + currentFileIndex)->allSequences[idx]->sequence[i] = (files + currentFileIndex)->fullSequence[idx * (files + currentFileIndex)->allSequences[idx] + i];
+                    (files + currentFileIndex)->allSequences[idx]->sequence[i] = (files + currentFileIndex)->fullSequence[(idx * (files + currentFileIndex)->chunkSize) + i];
                 }
 
                 (files + currentFileIndex)->allSequences[idx]->status = SEQUENCE_BEING_SORTED;
@@ -131,16 +135,16 @@ int getChunk() {
         for (int i = 0; i < size - 1; i++) {
 
             /* Check for two sorted sequences that can be merged together */
-            if ((files + currentFileIndex)->allSequences[idx]->mergedSequences[i] == SEQUENCE_SORTED) {
-                sequencesToMerge[sequenceToMergeIdx++] = sequenceIdx;
+            if ((files + currentFileIndex)->allSequences[i]->status == SEQUENCE_SORTED) {
+                sequencesToMerge[sequenceToMergeIdx++] = i;
             } 
 
             /* Already found to sequences to merge! */
             if (sequenceToMergeIdx >= 2) {
                 ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->status = SEQUENCE_BEING_MERGED;   /* Make second sequence obsolete, as it will be merged into the 1st one */
                 ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->status = SEQUENCE_OBSOLETE;   /* Make second sequence obsolete, as it will be merged into the 1st one */
-                ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size += (sequence + sequencesToMerge[1])->size    /* New sequence will have the size of both sequences size */
-                ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence = (unsigned int *) realloc(((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size * unsigned int);
+                ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size += ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->size;    /* New sequence will have the size of both sequences size */
+                ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence = (unsigned int *) realloc(((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence, ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size * sizeof(unsigned int));
                 for (int j = 0; j < ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->size; j++) {
                     ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence[ ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size + j] = ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->sequence[j];
                 }
@@ -149,13 +153,25 @@ int getChunk() {
 
         }
 
+    }
 
-        /* Nothing to process */
-        return -1;
+    /* Nothing to process */
+    return -1;
 
+}
+
+
+void processChunk(int sequenceIdx) {
+
+    bitonic_sort((files + currentFileIndex)->allSequences[sequenceIdx]->sequence, (files + currentFileIndex)->allSequences[sequenceIdx]->size);
+
+    if ((files + currentFileIndex)->isFinished) {
+        memcpy((files + currentFileIndex)->fullSequence, (files + currentFileIndex)->allSequences[sequenceIdx]->sequence, (files + currentFileIndex)->allSequences[sequenceIdx]->size * sizeof(unsigned));
     }
 
 }
+
+
 
 /**
  * @brief Get the Results object
@@ -163,14 +179,14 @@ int getChunk() {
  */
 int validation() {
 
-    for (int i = 0; i < (files + currentFileIndex)->numberOfValues - 1; i++)    {
+    for (int i = 0; i < (files + currentFileIndex)->numNumbers - 1; i++)    {
 
-        if ((files + currentFileIndex)->sortedList[i] > (files + currentFileIndex)->sortedList[i + 1]) {
-            printf("Error in position %d between element %d and %d\n", i, (files + currentFileIndex)->sortedList[i], (files + currentFileIndex)->sortedList[i + 1]);
+        if ((files + currentFileIndex)->fullSequence[i] > (files + currentFileIndex)->fullSequence[i + 1]) {
+            printf("Error in position %d between element %d and %d\n", i, (files + currentFileIndex)->fullSequence[i], (files + currentFileIndex)->fullSequence[i + 1]);
             return -1;
         }    
 
-        if (i == ((files + currentFileIndex)->numberOfValues - 1)){
+        if (i == ((files + currentFileIndex)->numNumbers - 1)){
             printf("Everything is fine\n");
             return 1;
         }
@@ -183,18 +199,18 @@ int validation() {
 
 
 void resetChunkData(struct Sequence *sequence) {
-    memset(&sequence, 0, sizeof(Sequence));
+    memset(&sequence, 0, sizeof(struct Sequence));
 }
 
 
 
 void resetFilesData(struct fileInfo *files) {
-    memset(&files, 0, sizeof(fileInfo));
+    memset(&files, 0, sizeof(struct fileInfo));
 }
 
 
 
-void bitonic_merge(int arr[], int low, int cnt, int dir) {
+void bitonic_merge(unsigned int arr[], int low, int cnt, int dir) {
     if (cnt > 1) {
         int k = cnt / 2;
         for (int i = low; i < low + k; i++) {
@@ -209,7 +225,7 @@ void bitonic_merge(int arr[], int low, int cnt, int dir) {
     }
 }
 
-void bitonic_sort_recursive(int arr[], int low, int cnt, int dir) {
+void bitonic_sort_recursive(unsigned int arr[], int low, int cnt, int dir) {
     if (cnt > 1) {
         int k = cnt / 2;
         bitonic_sort_recursive(arr, low, k, 1);
@@ -218,7 +234,7 @@ void bitonic_sort_recursive(int arr[], int low, int cnt, int dir) {
     }
 }
 
-void bitonic_sort(int arr[], int n) {
+void bitonic_sort(unsigned int arr[], int n) {
     int cnt = 2;
     while (cnt <= n) {
         for (int i = 0; i < n; i += cnt) {
@@ -228,7 +244,7 @@ void bitonic_sort(int arr[], int n) {
     }
 }
 
-void merge_sorted_arrays(int *arr1, int n1, int *arr2, int n2, int *result) {
+void merge_sorted_arrays(unsigned int *arr1, int n1, unsigned int *arr2, int n2, unsigned int *result) {
     int i = 0, j = 0, k = 0;
 
     while (i < n1 && j < n2) {
