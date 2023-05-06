@@ -31,14 +31,17 @@
 /** \brief Identify an unsorted sequence */
 #define SEQUENCE_SORTED 1
 
+/** \brief Identify an unsorted sequence */
+#define SEQUENCE_BEING_SORTED 2
+
 /** \brief Identify a sequence that is currently being merged */
-#define SEQUENCE_BEING_MERGED 2
+#define SEQUENCE_BEING_MERGED 3
 
 /** \brief Identify a merged sequence (the sequence was merged and sorted into another sequence and is no longer needed) */
-#define SEQUENCE_OBSOLETE 3
+#define SEQUENCE_OBSOLETE 4
 
 /** \brief Identify the sequence with all the file numbers sorted */
-#define SEQUENCE_FINAL 4
+#define SEQUENCE_FINAL 
 
 
 #endif /* CONSTANTS_H */

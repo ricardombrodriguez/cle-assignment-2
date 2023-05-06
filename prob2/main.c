@@ -170,7 +170,7 @@ int main(int argc, char *argv[]) {
 
                         sequencesToMerge++;
 
-                    } else if ((files + currentFileIndex)->allSequences[idx]->status == SEQUENCE_UNSORTED || (files + currentFileIndex)->allSequences[idx]->status == SEQUENCE_BEING_MERGED) {
+                    } else if ((files + currentFileIndex)->allSequences[idx]->status == SEQUENCE_UNSORTED || (files + currentFileIndex)->allSequences[idx]->status == SEQUENCE_BEING_SORTED || (files + currentFileIndex)->allSequences[idx]->status == SEQUENCE_BEING_MERGED) {
 
                         sequencesToMerge--;
 
@@ -258,6 +258,7 @@ int main(int argc, char *argv[]) {
             /**
              * @brief Este deve receber a seqeuence-sequence e processar (fazer o sort, n é preciso malloc nem nada)
              * Quando estiver merged, o status da sequencia deve passar de SEQUENCE_SORTED para SEQUENCE_BEING_MERGED
+             * Se tiver BEING_SORTED passar SORTED
              * 
              */
             processChunk(sequence);

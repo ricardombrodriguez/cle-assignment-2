@@ -100,7 +100,7 @@ int getChunk() {
                     (files + currentFileIndex)->allSequences[idx]->sequence[i] = (files + currentFileIndex)->fullSequence[idx * (files + currentFileIndex)->allSequences[idx] + i];
                 }
 
-                (files + currentFileIndex)->allSequences[idx]->status = SEQUENCE_SORTED;
+                (files + currentFileIndex)->allSequences[idx]->status = SEQUENCE_BEING_SORTED;
                 return idx;
             }
 
