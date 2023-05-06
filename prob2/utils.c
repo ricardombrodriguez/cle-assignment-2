@@ -49,6 +49,9 @@ void storeFilenames(char *filenames[], int size) {
             printf("[ERROR] Can't open file %s\n", (files + i)->filename);
             exit(EXIT_FAILURE);
         }
+
+        printf("aqui porra\n");
+
         (files + i)->fileIndex = i;
         if (fread(&(files + i)->numNumbers, sizeof(int), 1,(files + i)->fp )) {
             printf("[ERROR] Can't read the first line of the file\n");
@@ -199,13 +202,13 @@ int validation() {
 
 
 void resetChunkData(struct Sequence *sequence) {
-    memset(&sequence, 0, sizeof(struct Sequence));
+    memset(sequence, 0, sizeof(struct Sequence));
 }
 
 
 
 void resetFilesData(struct fileInfo *files) {
-    memset(&files, 0, sizeof(struct fileInfo));
+    memset(files, 0, sizeof(struct fileInfo));
 }
 
 
