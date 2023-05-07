@@ -53,17 +53,11 @@ void storeFilenames(char *filenames[], int size) {
         }
 
         (files + i)->fileIndex = i;
-<<<<<<< HEAD
         if (!fread(&(files + i)->numNumbers, sizeof(unsigned int), 1, (files + i)->fp )) {
-=======
-        if (fread(&(files + i)->numNumbers, sizeof(int), 1,(files + i)->fp ) != 1) {
-
->>>>>>> 8a147fdfbdcc1b562269c13bf16f83eb5c8185fd
             printf("[ERROR] Can't read the first line of the file\n");
             exit(EXIT_FAILURE);
         }
         (files + i)->chunkSize = (unsigned int) ceil((files + i)->numNumbers / (size - 1)); /* Not counting with the root process */
-<<<<<<< HEAD
         (files + i)->allSequences = (struct Sequence**)malloc((size-1) * sizeof(struct Sequence));
         (files + i)->fullSequence = (unsigned int *) malloc((files + i)->numNumbers * sizeof(unsigned int));
 
@@ -74,33 +68,14 @@ void storeFilenames(char *filenames[], int size) {
             sequence->sequence = (unsigned int *) malloc((files + i)->chunkSize * sizeof(unsigned int));
             sequence->status = SEQUENCE_UNSORTED;
             sequence->size = (files + i)->chunkSize;
-=======
-        (files + i)->allSequences = (struct Sequence**)malloc((size-1) * sizeof(struct Sequence*));
-
-
-        for (int j = 0; j < size-1; j++) {
-            /*Allocate memory for the chunk */
-            (files + i)->allSequences[j] = (struct Sequence*)malloc(sizeof(struct Sequence));
-            memset((files + i)->allSequences[j], 0, sizeof(struct Sequence));
-            (files + i)->allSequences[j]->sequence = (unsigned int *) malloc((files + i)->chunkSize * sizeof(unsigned int));
-            (files + i)->allSequences[j]->status = SEQUENCE_UNSORTED;
-            /* Get chunk data */
-            (files + i)->allSequences[j]->size = (files + i)->chunkSize;
-            /* Last worker can have a different sequence size, since the sequences could not be splitted equally through all workers */
->>>>>>> 8a147fdfbdcc1b562269c13bf16f83eb5c8185fd
             if (j == size - 1) {
                 sequence->size = (files + i)->numNumbers - ((files + i)->chunkSize * (size - 2));
             }
-<<<<<<< HEAD
             (files + i)->allSequences[j] = sequence;
             //memcpy((files + i)->allSequences[j], sequence, sizeof(struct Sequence));
 
 
         }
-=======
-        }
-        
->>>>>>> 8a147fdfbdcc1b562269c13bf16f83eb5c8185fd
         (files + i)->isFinished = 0;
 
         /* Allocate memory for the full sequence */

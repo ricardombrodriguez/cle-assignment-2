@@ -1,0 +1,7 @@
+
+prob2.out:885944 terminated with signal 11 at PC=7f94fdaa5815 SP=7ffd85a72f80.  Backtrace:
+/lib/x86_64-linux-gnu/libc.so.6(realloc+0x55)[0x7f94fdaa5815]
+./prob2.out(+0x1548)[0x56417ac15548]
+/lib/x86_64-linux-gnu/libc.so.6(+0x29d90)[0x7f94fda29d90]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x80)[0x7f94fda29e40]
+./prob2.out(+0x2355)[0x56417ac16355]

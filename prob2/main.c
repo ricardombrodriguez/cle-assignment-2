@@ -156,18 +156,25 @@ int main(int argc, char *argv[]) {
             /* For all the worker processes */
             for (int i = 1; i < nWorkers; i++)
             {
+
                 /* Allocate memory to support a Sequence structure */
                 struct Sequence *seqData = (struct Sequence *) malloc(sizeof(struct Sequence));
 
                 /*Allocate memory for the chunk */
-                seqData->sequence = (unsigned int *)malloc(sequenceSize * sizeof(unsigned int));
                 seqData->status = SEQUENCE_UNSORTED;
                 seqData->size = 0;
+
                 int fileIdx;
 
                 /* Receive the processing results from each worker process */
                 MPI_Recv(&fileIdx, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(&seqData->size, 1, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+
+                /*Allocate memory for the chunk */
+                seqData->sequence = (unsigned int *)malloc(seqData->size * sizeof(unsigned int));
+                printf("[ROOT to %d] bbbbbbbbbbbb -> %zu\n", i, sizeof seqData->sequence);
+
                 MPI_Recv(seqData->sequence, seqData->size, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(&seqData->status, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 MPI_Recv(&sequenceIdx, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -206,17 +213,16 @@ int main(int argc, char *argv[]) {
         /* Receive brodcast message from the dispatcher */
         MPI_Bcast(&sequenceSize, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-        /* Allocate memory to support a Sequence structure */
-        struct Sequence *seqData = (struct Sequence *) malloc(sizeof(struct Sequence));
-
-        /*Allocate memory for the chunk */
-        seqData->sequence = (unsigned int *)malloc(sequenceSize * sizeof(unsigned int));
-        seqData->status = SEQUENCE_UNSORTED;
-        seqData->size = 0;
-        int sequenceIdx, fileIdx;
-
         while (true)
         {
+
+            /* Allocate memory to support a Sequence structure */
+            struct Sequence *seqData = (struct Sequence *) malloc(sizeof(struct Sequence));
+
+            /*Allocate memory for the chunk */
+            seqData->status = SEQUENCE_UNSORTED;
+            seqData->size = 0;
+            int sequenceIdx, fileIdx;
     
             /* Receive the control variable from the dispatcher to know if there's work still to be done (or not) */
             MPI_Recv(&isFinished, 1, MPI_INT, 0, MPI_TAG_PROGRAM_STATE, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -226,10 +232,21 @@ int main(int argc, char *argv[]) {
                 break;
 
             MPI_Recv(&fileIdx, 1, MPI_INT, 0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            MPI_Recv(&seqData->size, 1, MPI_UNSIGNED,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);                   
+            MPI_Recv(&seqData->size, 1, MPI_UNSIGNED,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);        
+
+            //seqData->sequence = (unsigned int *)malloc(seqData->size * sizeof(unsigned int));
+            seqData->sequence = (unsigned int *)malloc(seqData->size * sizeof(unsigned int));
+
+
             MPI_Recv(seqData->sequence, seqData->size, MPI_UNSIGNED,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);     
             MPI_Recv(&seqData->status, 1, MPI_INT,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);     
-            MPI_Recv(&sequenceIdx, 1, MPI_INT,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);                                     
+            MPI_Recv(&sequenceIdx, 1, MPI_INT,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);         
+
+            printf("[RANK %d] AAAAAAAAAA -> %zu\n", rank, sizeof seqData->sequence);
+            printf("[RANK %d] SIZEEEEE -> %u\n", rank, seqData->size);
+
+            printf("[RANK %d] RECEBI UM CHUNK COM = %u de size\n", rank, seqData->size);         
+                      
 
             processChunk(seqData);
 
