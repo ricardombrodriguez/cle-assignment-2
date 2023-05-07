@@ -121,6 +121,13 @@ int getChunk() {
         /* Search for unsorted sequences that need to be sorted */
         for (int idx = 0; idx < size-1; idx++) {
 
+            if (files != NULL &&
+                currentFileIndex >= 0 && currentFileIndex < numFiles &&
+                (files + currentFileIndex)->allSequences != NULL &&
+                idx >= 0 && idx < size - 1 &&
+                (files + currentFileIndex)->allSequences[idx] != NULL) {
+        
+
             if ((files + currentFileIndex)->allSequences[idx]->status == SEQUENCE_UNSORTED) {
 
                 for (int i = 0; i < (files + currentFileIndex)->allSequences[idx]->size; i++) {
@@ -131,7 +138,7 @@ int getChunk() {
                 return idx;
             } else {
                 printf("STATUS = %d \n", (files + currentFileIndex)->allSequences[idx]->status);
-            }
+            }}
 
         }
 

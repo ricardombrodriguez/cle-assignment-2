@@ -182,7 +182,9 @@ int main(int argc, char *argv[]) {
                 printf("[ROOT] Recebi a sequencia com status %d do idx %d (SIZE DO CHUNK = %u) | FILE INDEX = %d\n", seqData->status, sequenceIdx, seqData->size, fileIdx);
 
 
-                (files + fileIdx)->allSequences[sequenceIdx] = seqData;
+                //(files + fileIdx)->allSequences[sequenceIdx] = seqData;
+                (files + fileIdx)->allSequences = (struct Sequence **)malloc(nWorkers * sizeof(struct Sequence *));
+
 
                 if (isFinished)
                     break;
