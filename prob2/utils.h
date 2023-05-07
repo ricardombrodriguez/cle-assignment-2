@@ -1,9 +1,9 @@
 /**
  *  @file utils.h (interface file)
  *
- *  @brief 
+ *  @brief Interface for important program methods
  *
- *  @author Pedro Sobral & Ricardo Rodriguez, March 2023
+ *  @author Pedro Sobral & Ricardo Rodriguez
  */
 #ifndef UTILS_H
 # define UTILS_H
@@ -13,83 +13,33 @@
 #include <string.h>
 
 /**
- * @brief Information about the file (name and pointer) and reference to the file sorted sequence (final state)
+ * @brief Merges sub-arrays in a bitonic sequence.
  * 
+ * @param array Array containing the elements to be merged.
+ * @param low Starting index of the sub-array to be merged.
+ * @param count Number of elements in the sub-array to be merged.
+ * @param direction The direction of sorting (1 for ascending, 0 for descending).
  */
-struct fileInfo {
-    char *filename;
-    FILE *fp;
-    unsigned int fileIndex;
-    int numNumbers;
-    unsigned int chunkSize;
-    unsigned int *fullSequence;
-    struct Sequence **allSequences; 
-    int isFinished;
-};
+extern void bitonicMerge(int *array, int low, int count, int direction);
 
 /**
- * @brief Structure that stores the integer sequence, the size (number of integers of the sequence) and a boolean
- * variable *isSorted* to know if sequence is sorted (or not)
+ * @brief Recursively sorts a bitonic sequence.
  * 
+ * @param array Array containing the elements to be sorted.
+ * @param low Starting index of the sub-array to be sorted.
+ * @param count Number of elements in the sub-array to be sorted.
+ * @param direction The direction of sorting (1 for ascending, 0 for descending).
  */
-struct Sequence {
-    unsigned int *sequence;
-    unsigned int size;
-    int status;
-};
-
+extern void bitonicMergeSort(int *array, int low, int count, int direction);
 
 /**
- * @brief Get the text file names by processing the command line and storing them for future retrieval/update by processes
+ * @brief Validates if the array is sorted in ascending order.
  * 
- * @param filenames 
- * @param size 
+ * @param array Array to be validated.
+ * @param numValues Number of elements in the array.
+ * @return 1 if the array is sorted, 0 otherwise.
  */
-extern void storeFilenames(char *filenames[], int size);
-
-/**
- * @brief Function to return the index position of the Sequence structure that will be sent to the worker thread for future processing
- * 
- * First, it looks for a Sequence in the allSequences variable which is unsorted (first step of the merge sort process), with the status
- * SEQUENCE_UNSORTED. If that's the case, we will fill the sequence variable, which will store the unsorted chunk of integers and return
- * the index of that Sequence structure to send it to the workers.
- *
- * If all sequences are already sorted (the program does not return in the first loop), we should look for two already sorted chunks/sequences
- * that can be merged into one. If we have sequence A and B, the sequence B will be 'appended' to sequence A. Because of that, we can make sequence
- * B obsolete (it wont be used in the future), since sequence A is the merged solution of A and B.
- *
- * If the conditions explained above doesn't happen, there isn't any chunk to get (we already have a merged sequence that corresponds to the file sorted
- * array of integers), returning -1.
- * 
- * @return int 
- */
-extern int getChunk();
-
-
-extern void processChunk(struct Sequence *sequence);
-
-extern int validation();
-
-extern void resetChunkData(struct Sequence *sequence);
-
-extern void resetFilesData(struct fileInfo *files);
-
-
-/** \brief get the determinant of given matrix */
-extern double getDeterminant(int order, double *matrix); 
-
-extern void bitonic_merge(unsigned int arr[], unsigned int low, unsigned int cnt, unsigned int dir);
-
-extern void bitonic_sort_recursive(unsigned int arr[], unsigned int low, unsigned int cnt, unsigned int dir);
-
-extern void bitonic_sort(unsigned int arr[], unsigned int n);
-
-
-extern void merge(unsigned int arr[], unsigned int left[], unsigned int leftSize, unsigned int right[], unsigned int rightSize);
-extern void mergeSort(unsigned int arr[], unsigned int size);
-extern void mergeSortWrapper(unsigned int *arr[], unsigned int size);
-
-extern void mergeSequences(struct Sequence *seq1, struct Sequence *seq2);
+extern int validation(int *array, int n);
 
 
 

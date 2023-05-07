@@ -1,9 +1,10 @@
 /**
- * @file bitonic_sort_mpi.c
+ * @file main.c
+ * @authors Pedro Sobral, Ricardo Rodriguez
  * @brief Parallel Bitonic Sort using MPI
  *
  * This program reads integers from binary files and sorts them using the bitonic sort algorithm
- * in parallel with the Message Passing Interface (MPI).
+ * in parallel with the Message Passing Interface (MPI) library.
  */
 
 #include <stdio.h>
@@ -14,161 +15,238 @@
 /**
  * @brief Merges sub-arrays in a bitonic sequence.
  * 
- * @param arr Array containing the elements to be merged.
+ * @param array Array containing the elements to be merged.
  * @param low Starting index of the sub-array to be merged.
  * @param count Number of elements in the sub-array to be merged.
  * @param direction The direction of sorting (1 for ascending, 0 for descending).
  */
-void bitonicMerge(int *arr, int low, int count, int direction);
+void bitonicMerge(int *array, int low, int count, int direction);
 
 /**
  * @brief Recursively sorts a bitonic sequence.
  * 
- * @param arr Array containing the elements to be sorted.
+ * @param array Array containing the elements to be sorted.
  * @param low Starting index of the sub-array to be sorted.
  * @param count Number of elements in the sub-array to be sorted.
  * @param direction The direction of sorting (1 for ascending, 0 for descending).
  */
-void bitonicMergeSort(int *arr, int low, int count, int direction);
+void bitonicMergeSort(int *array, int low, int count, int direction);
+
+
+/**
+ * @brief Validates if the array is sorted in ascending order.
+ * 
+ * @param array Array to be validated.
+ * @param numValues Number of elements in the array.
+ * @return 1 if the array is sorted, 0 otherwise.
+ */
+int validation(int *array, int n);
 
 /**
  * @brief Main function of the program.
  * 
- * @param argc Number of command-line arguments.
- * @param argv Array of command-line arguments.
- * @return int Returns 0 on successful execution, non-zero otherwise.
  */
 int main(int argc, char *argv[])
 {
+    
     MPI_Init(&argc, &argv);
 
-    int num_procs, rank;
-    MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+    /* MPI related variables */
+    int size, rank; 
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+    double start_time = 0.0, end_time = 0.0;
+    double total_start_time = 0.0, total_end_time = 0.0;
+
+    total_start_time = MPI_Wtime();
+
+    /* Check for usage errors (should have at least one file) */
     if (argc < 3 || strcmp(argv[1], "-f") != 0)
     {
         if (rank == 0)
         {
-            fprintf(stderr, "Usage: %s -f <file1> [<file2> ...]\n", argv[0]);
+            fprintf(stderr, "[ERROR] Usage: %s -f <file1> [<file2> ...]\n", argv[0]);
         }
         MPI_Finalize();
         return 1;
     }
 
+    /* Sort each file at a time */
     for (int i = 2; i < argc; i++)
     {
-        if (rank == 0)
-        {
-            printf("Processing file: %s\n", argv[i]);
-        }
 
         FILE *file = NULL;
-        int n = 0;
+        int numValues = 0;
 
+        /* Distributor is responsible for opening the file and read the number of values/integers of it */
         if (rank == 0)
         {
             file = fopen(argv[i], "rb");
             if (!file)
             {
-                fprintf(stderr, "Error opening file: %s\n", argv[i]);
+                fprintf(stderr, "[ERROR] Error opening file: %s\n", argv[i]);
                 continue;
             }
-            fread(&n, sizeof(int), 1, file);
+            fread(&numValues, sizeof(int), 1, file);
+
+            printf("Processing file: %s\n", argv[i]);
+            start_time = MPI_Wtime();
         }
 
-        MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-        int *arr = (int *)malloc(n * sizeof(int));
+
+        /* Broadcast the number of values of the file to other processes */
+        MPI_Bcast(&numValues, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+        /* Allocate memory to hold the integer array */
+        int *array = (int *)malloc(numValues * sizeof(int));
+
+        /* Distributor is responsible for reading all the file's integers and store it in the array */
         if (rank == 0)
         {
-            fread(arr, sizeof(int), n, file);
+            fread(array, sizeof(int), numValues, file);
             fclose(file);
         }
 
-        MPI_Bcast(arr, n, MPI_INT, 0, MPI_COMM_WORLD);
+        /* Broadcast the integer array to other processes */
+        MPI_Bcast(array, numValues, MPI_INT, 0, MPI_COMM_WORLD);
 
-        int *local_arr = (int *)malloc(n * sizeof(int));
-        int chunk_size = n / num_procs;
+        int *localArray = (int *)malloc(numValues * sizeof(int)); /* Allocate memory for the local array */
+        int chunkSize = numValues / size; /* The chunk size is equally reparted according to the number of processes (size) */
 
-        MPI_Scatter(arr, chunk_size, MPI_INT, local_arr, chunk_size, MPI_INT, 0, MPI_COMM_WORLD);
+        /* MPI_Scatter sends each process a part of the input array (with chunkSize numbers) and stores it to the localArray buffer */
+        MPI_Scatter(array, chunkSize, MPI_INT, localArray, chunkSize, MPI_INT, 0, MPI_COMM_WORLD);
 
-        bitonicMergeSort(local_arr, 0, chunk_size, 1);
+        /* Perform bitonic merge sort on the localArray */
+        bitonicMergeSort(localArray, 0, chunkSize, 1);
 
-        for (int i = 1; i < num_procs; i <<= 1)
+        /* Iterate over the powers of 2 (1,2,4,...) */
+        for (int i = 1; i < size; i <<= 1)
         {
+            /* Find partner using the XOR operator. This partner rank is the rank of the process that the current process will communicate with during the current iteration. */
             int partner = rank ^ i;
-            MPI_Sendrecv_replace(local_arr, chunk_size, MPI_INT, partner, 0, partner, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-             int direction = (rank & i) ? 0 : 1;
-            bitonicMerge(local_arr, 0, chunk_size, direction);
-    }
+            /* Send the current process's localArray data to the partner process and receives the partner's localArray data in return (mutual exchange) */
+            MPI_Sendrecv_replace(localArray, chunkSize, MPI_INT, partner, 0, partner, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-    MPI_Gather(local_arr, chunk_size, MPI_INT, arr, chunk_size, MPI_INT, 0, MPI_COMM_WORLD);
+            /** 
+             * Compute the direction in which the bitonicMerge function will merge the localArray data. 
+             * If (rank & i) != 0 -> direction = 0 -> merge should be in ascending order. 
+             * If (rank & i) == 0 -> direction = 1 -> merge should be in descending order. 
+            */
+            int direction = (rank & i) ? 0 : 1;
 
-    if (rank == 0)
-    {
-        bitonicMergeSort(arr, 0, n, 1);
-    }
+            /* Perform the bitonic merge according to the previous computed direction on the localArray*/
+            bitonicMerge(localArray, 0, chunkSize, direction);
+        }
 
-    if (rank == 0)
-    {
-        printf("Sorted array:\n");
-        for (int j = 0; j < n; j++)
+        /* Gather all the local arrays from all the processes and merge them into the final array */
+        MPI_Gather(localArray, chunkSize, MPI_INT, array, chunkSize, MPI_INT, 0, MPI_COMM_WORLD);
+
+        /* The distributor will use bitonic merge sort to sort all the gathered localArrays of each worker process */
+        if (rank == 0)
         {
-            printf("%d\n", arr[j]);
+            bitonicMergeSort(array, 0, numValues, 1);
+        }
+
+        /* The distributor validates the sorted array and prints the results and execution times */
+        if (rank == 0)
+        {
+            /* Check if the sorted array is valid */
+            if (validation(array, numValues))
+            {
+                printf("Validation: Array is correctly sorted.\n");
+            } 
+            else 
+            {
+                printf("Validation: Array is NOT correctly sorted.\n");
+            }
+
+            /* Calculate and print the execution time of the current file */
+            end_time = MPI_Wtime();
+            printf("[File: %s] | Execution time: %f seconds\n\n", argv[i], end_time - start_time);
+        }
+
+    /* Free memory */
+    free(localArray);
+    free(array);
+    
+    }
+
+    /* Calculate the execution time of ALL the files*/
+    if (rank == 0)
+    {
+        total_end_time = MPI_Wtime();
+        printf("Total execution time: %f seconds\n", total_end_time - total_start_time);
+    }
+
+    MPI_Finalize();
+    return 0;
+}
+
+/**
+*
+* @brief Merges sub-arrays in a bitonic sequence.
+*
+* @param arr Array containing the elements to be merged.
+* @param low Starting index of the sub-array to be merged.
+* @param count Number of elements in the sub-array to be merged.
+* @param direction The direction of sorting (1 for ascending, 0 for descending).
+*/
+void bitonicMerge(int *array, int low, int count, int direction)
+{
+    if (count > 1)
+    {
+        int k = count / 2;
+        for (int i = low; i < low + k; i++)
+            {
+            if (direction == (array[i] > array[i + k]))
+            {
+                int temp = array[i];
+                array[i] = array[i + k];
+                array[i + k] = temp;
+            }
+        }
+        bitonicMerge(array, low, k, direction);
+        bitonicMerge(array, low + k, k, direction);
+    }
+}
+/**
+*
+* @brief Recursively sorts a bitonic sequence.
+*
+* @param array Array containing the elements to be sorted.
+* @param low Starting index of the sub-array to be sorted.
+* @param count Number of elements in the sub-array to be sorted.
+* @param direction The direction of sorting (1 for ascending, 0 for descending).
+*/
+void bitonicMergeSort(int *array, int low, int count, int direction)
+{
+    if (count > 1)
+    {
+        int k = count / 2;
+        bitonicMergeSort(array, low, k, 1);
+        bitonicMergeSort(array, low + k, k, 0);
+        bitonicMerge(array, low, count, direction);
+    }
+}
+
+/**
+ * @brief Validates if the array is sorted in ascending order.
+ * 
+ * @param array Array to be validated.
+ * @param numValues Number of elements in the array.
+ * @return 1 if the array is sorted, 0 otherwise.
+ */
+int validation(int *array, int numValues)
+{
+    for (int i = 1; i < numValues; i++)
+    {
+        if (array[i - 1] > array[i])
+        {
+            return 0;
         }
     }
-
-    free(local_arr);
-    free(arr);
-}
-
-MPI_Finalize();
-return 0;
-}
-
-/**
-
-@brief Merges sub-arrays in a bitonic sequence.
-@param arr Array containing the elements to be merged.
-@param low Starting index of the sub-array to be merged.
-@param count Number of elements in the sub-array to be merged.
-@param direction The direction of sorting (1 for ascending, 0 for descending).
-*/
-void bitonicMerge(int *arr, int low, int count, int direction)
-{
-if (count > 1)
-{
-int k = count / 2;
-for (int i = low; i < low + k; i++)
-{
-if (direction == (arr[i] > arr[i + k]))
-{
-int temp = arr[i];
-arr[i] = arr[i + k];
-arr[i + k] = temp;
-}
-}
-bitonicMerge(arr, low, k, direction);
-bitonicMerge(arr, low + k, k, direction);
-}
-}
-/**
-
-@brief Recursively sorts a bitonic sequence.
-@param arr Array containing the elements to be sorted.
-@param low Starting index of the sub-array to be sorted.
-@param count Number of elements in the sub-array to be sorted.
-@param direction The direction of sorting (1 for ascending, 0 for descending).
-*/
-void bitonicMergeSort(int *arr, int low, int count, int direction)
-{
-if (count > 1)
-{
-int k = count / 2;
-bitonicMergeSort(arr, low, k, 1);
-bitonicMergeSort(arr, low + k, k, 0);
-bitonicMerge(arr, low, count, direction);
-}
+    return 1;
 }

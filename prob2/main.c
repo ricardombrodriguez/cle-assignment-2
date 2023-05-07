@@ -1,292 +1,161 @@
-
 /**
  * @file main.c
  * @authors Pedro Sobral, Ricardo Rodriguez
- * @brief Text processing in Portuguese with Multithreading
- * 
+ * @brief Parallel Bitonic Sort using MPI
+ *
+ * This program reads integers from binary files and sorts them using the bitonic sort algorithm
+ * in parallel with the Message Passing Interface (MPI) library.
  */
-
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <stdbool.h>
-#include <unistd.h>
-#include <time.h>
 #include <mpi.h>
+#include <string.h>
 
-#include "constants.h"
 #include "utils.h"
 
-/* Number of files to be processed */
-unsigned int numFiles;
-
-/* File sructure initialization */
-struct fileInfo *files;
-
-/* Stores the index of the current file being proccessed by the working threads */
-int currentFileIndex = 0;
-
-int isFinished;
-
-int size;
-
-
-void usage();
+#define DISTRIBUTOR_RANK 0
 
 /**
- * @brief 
+ * @brief Main function of the program.
  * 
- * @param argc 
- * @param argv 
- * @return int 
  */
-int main(int argc, char *argv[]) {
-
-    /* Initialize MPI variables */
-    int rank;                       /* Rank - Process ID | Size - Number of processes (including root) */
-    unsigned int sequenceSize, sequenceSizeRemainder;
-
-    /* Initialize the MPI communicator and get the rank of processes and the count of processes */
+int main(int argc, char *argv[])
+{
+    
     MPI_Init(&argc, &argv);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    /* ERROR. Number of processes should be limited. */
-    if (size < 2 || size > 8) {
-        fprintf(stderr, "Invalid number of processes (must be >= 2 and <= 8)");
+    /* MPI related variables */
+    int size, rank; 
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    double start_time = 0.0, end_time = 0.0;
+    double total_start_time = 0.0, total_end_time = 0.0;
+
+    total_start_time = MPI_Wtime();
+
+    /* Check for usage errors (should have at least one file) */
+    if (argc < 3 || strcmp(argv[1], "-f") != 0)
+    {
+        if (rank == DISTRIBUTOR_RANK)
+        {
+            fprintf(stderr, "[ERROR] Usage: %s -f <file1> [<file2> ...]\n", argv[0]);
+        }
+        MPI_Finalize();
         return EXIT_FAILURE;
     }
-  
-    /* ERROR. No arguments for filenames were introduced to the program. */
-    if (argc < 2) {
-        printf("[ERROR] Invalid number of files");
-        return 1;
-    }
 
-    const char *optstr = "f:h";
-    int option;
-    char *filenames[MAX_NUM_FILES];
+    /* Sort each file at a time */
+    for (int i = 2; i < argc; i++)
+    {
 
-    if (rank == 0) {
+        FILE *file = NULL;
+        int numValues = 0;
 
-        /* Structure used to keep track of the execution time */
-        struct timespec start, finish;
-        
-        /* Clock start */
-        clock_gettime(CLOCK_MONOTONIC_RAW, &start);
-
-        while ((option = getopt(argc, argv, optstr)) != -1) {
-            switch (option) {
-                case 'f':
-                    filenames[numFiles++] = optarg;
-                    while (optind < argc && argv[optind][0] != '-') {
-                        if (access(argv[optind], F_OK) == 0) {
-                            // file exists
-                            filenames[numFiles++] = argv[optind];
-                        } else {
-                            // file doesn't exist, show error and exit program
-                            printf("[ERROR] %s file doesn't exist", argv[optind]);
-                            return 1;
-                        }
-                        optind++;
-                    }
-                    break;
-                case 'h':
-                    usage();
-                    return EXIT_SUCCESS;
-                default:
-                    fprintf(stderr, "Option Not Defined\n");
-                    return EXIT_FAILURE;
-            }
-        }
-
-        /* Allocation of memory to the fileInfo structure */
-        files = (struct fileInfo *)malloc(numFiles * sizeof(struct fileInfo));
-
-        /* Initialize fileInfo structure (setup and store filenames) */
-        storeFilenames(filenames, size);
-
-        /* Keep track of the current worker's rank ID */
-        int nWorkers = 0;
-
-        /* Wait for chunk requests while there are still files to be processed */
-        while (!isFinished)
+        /* Distributor is responsible for opening the file and read the number of values/integers of it */
+        if (rank == DISTRIBUTOR_RANK)
         {
-
-            sequenceSize = (files + currentFileIndex)->numNumbers / (size - 1);
-            sequenceSizeRemainder = (files + currentFileIndex)->numNumbers % (size - 1);
-            if (sequenceSizeRemainder != 0) {
-                sequenceSize++;
-            }
-
-            /* Broadcast message to working processes, so that they can start asking for integer chunks */
-            MPI_Bcast(&sequenceSize, 1, MPI_UNSIGNED, 0, MPI_COMM_WORLD);
-
-            int sequenceIdx, fileIdx;
-
-            /* For all the worker processes */
-            for (nWorkers = 1; nWorkers < size; nWorkers++)
+            file = fopen(argv[i], "rb");
+            if (!file)
             {
-
-                sequenceIdx = getChunk();
-
-                printf("[ROOT] -> [RANK %d] IS FINISHED ----> %d\n", nWorkers, isFinished);
-       
-                MPI_Send(&isFinished, 1, MPI_INT, nWorkers, MPI_TAG_PROGRAM_STATE, MPI_COMM_WORLD);
-
-                fileIdx = currentFileIndex;
-                if ((files + currentFileIndex)->allSequences[sequenceIdx]->status == SEQUENCE_FINAL) {
-                    currentFileIndex++;
-                    if (currentFileIndex >= numFiles) {
-                        isFinished = 1;
-                    }
-                }
-
-                MPI_Send(&currentFileIndex, 1, MPI_INT, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);
-                MPI_Send(&(files + fileIdx)->allSequences[sequenceIdx]->size, 1, MPI_UNSIGNED, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);
-                MPI_Send((files + fileIdx)->allSequences[sequenceIdx]->sequence, (files + fileIdx)->allSequences[sequenceIdx]->size, MPI_UNSIGNED, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);     
-                MPI_Send(&(files + fileIdx)->allSequences[sequenceIdx]->status, 1, MPI_INT, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);             
-                MPI_Send(&sequenceIdx, 1, MPI_INT, nWorkers, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD);  
-
-                printf("[ROOT] enviei tudo para o %d com um sequenceSize = %d \n", nWorkers, (files + fileIdx)->allSequences[sequenceIdx]->size);
-        
+                fprintf(stderr, "[ERROR] Error opening file: %s\n", argv[i]);
+                continue;
             }
+            fread(&numValues, sizeof(int), 1, file);
 
-            /* For all the worker processes */
-            for (int i = 1; i < nWorkers; i++)
-            {
-
-                /* Allocate memory to support a Sequence structure */
-                struct Sequence *seqData = (struct Sequence *) malloc(sizeof(struct Sequence));
-
-                /*Allocate memory for the chunk */
-                seqData->status = SEQUENCE_UNSORTED;
-                seqData->size = 0;
-
-                int fileIdx;
-
-                /* Receive the processing results from each worker process */
-                MPI_Recv(&fileIdx, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                MPI_Recv(&seqData->size, 1, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-
-                /*Allocate memory for the chunk */
-                seqData->sequence = (unsigned int *)malloc(seqData->size * sizeof(unsigned int));
-                printf("[ROOT to %d] bbbbbbbbbbbb -> %zu\n", i, sizeof seqData->sequence);
-
-                MPI_Recv(seqData->sequence, seqData->size, MPI_UNSIGNED, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                MPI_Recv(&seqData->status, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                MPI_Recv(&sequenceIdx, 1, MPI_INT, i, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-                printf("[ROOT] Recebi a sequencia com status %d do idx %d (SIZE DO CHUNK = %u) | FILE INDEX = %d\n", seqData->status, sequenceIdx, seqData->size, fileIdx);
-
-
-                //(files + fileIdx)->allSequences[sequenceIdx] = seqData;
-                (files + fileIdx)->allSequences = (struct Sequence **)malloc(nWorkers * sizeof(struct Sequence *));
-
-
-                if (isFinished)
-                    break;
-
-
-            }
-
+            printf("Processing file: %s\n", argv[i]);
+            start_time = MPI_Wtime();
         }
 
-        printf("[ROOT] ACABOU | A ENVIAR TUDO!\n");
 
-		/* Inform workers that all files are process and they can exit */
-		for (int i = 1; i < size; i++) {
-		    MPI_Send(&isFinished, 1, MPI_INT, i, MPI_TAG_PROGRAM_STATE, MPI_COMM_WORLD);
-        }
 
-        /* Clock end */
-        clock_gettime(CLOCK_MONOTONIC_RAW, &finish);
+        /* Broadcast the number of values of the file to other processes */
+        MPI_Bcast(&numValues, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-        /* Print the results of the text processing of all files */
-        validation();
+        /* Allocate memory to hold the integer array */
+        int *array = (int *)malloc(numValues * sizeof(int));
 
-        /* Calculate execution time */
-        printf("\eExecution time = %.6f s\n", (finish.tv_sec - start.tv_sec) / 1.0 + (finish.tv_nsec - start.tv_nsec) / 1000000000.0);
-
-    } else {
-
-        /* Receive brodcast message from the dispatcher */
-        MPI_Bcast(&sequenceSize, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-        while (true)
+        /* Distributor is responsible for reading all the file's integers and store it in the array */
+        if (rank == DISTRIBUTOR_RANK)
         {
+            fread(array, sizeof(int), numValues, file);
+            fclose(file);
+        }
 
-            /* Allocate memory to support a Sequence structure */
-            struct Sequence *seqData = (struct Sequence *) malloc(sizeof(struct Sequence));
+        /* Broadcast the integer array to other processes */
+        MPI_Bcast(array, numValues, MPI_INT, 0, MPI_COMM_WORLD);
 
-            /*Allocate memory for the chunk */
-            seqData->status = SEQUENCE_UNSORTED;
-            seqData->size = 0;
-            int sequenceIdx, fileIdx;
+        int *localArray = (int *)malloc(numValues * sizeof(int)); /* Allocate memory for the local array */
+        int chunkSize = numValues / size; /* The chunk size is equally reparted according to the number of processes (size) */
+
+        /* MPI_Scatter sends each process a part of the input array (with chunkSize numbers) and stores it to the localArray buffer */
+        MPI_Scatter(array, chunkSize, MPI_INT, localArray, chunkSize, MPI_INT, 0, MPI_COMM_WORLD);
+
+        /* Perform bitonic merge sort on the localArray */
+        bitonicMergeSort(localArray, 0, chunkSize, 1);
+
+        /* Iterate over the powers of 2 (1,2,4,...) */
+        for (int i = 1; i < size; i <<= 1)
+        {
+            /* Find partner using the XOR operator. This partner rank is the rank of the process that the current process will communicate with during the current iteration. */
+            int partner = rank ^ i;
+
+            /* Send the current process's localArray data to the partner process and receives the partner's localArray data in return (mutual exchange) */
+            MPI_Sendrecv_replace(localArray, chunkSize, MPI_INT, partner, 0, partner, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            /** 
+             * Compute the direction in which the bitonicMerge function will merge the localArray data. 
+             * If (rank & i) != 0 -> direction = 0 -> merge should be in ascending order. 
+             * If (rank & i) == 0 -> direction = 1 -> merge should be in descending order. 
+            */
+            int direction = (rank & i) ? 0 : 1;
+
+            /* Perform the bitonic merge according to the previous computed direction on the localArray*/
+            bitonicMerge(localArray, 0, chunkSize, direction);
+        }
+
+        /* Gather all the local arrays from all the processes and merge them into the final array */
+        MPI_Gather(localArray, chunkSize, MPI_INT, array, chunkSize, MPI_INT, 0, MPI_COMM_WORLD);
+
+        /* The distributor will use bitonic merge sort to sort all the gathered localArrays of each worker process */
+        if (rank == DISTRIBUTOR_RANK)
+        {
+            bitonicMergeSort(array, 0, numValues, 1);
+        }
+
+        /* The distributor validates the sorted array and prints the results and execution times */
+        if (rank == DISTRIBUTOR_RANK)
+        {
+            /* Check if the sorted array is valid */
+            if (validation(array, numValues))
+            {
+                printf("Validation: Array is correctly sorted.\n");
+            } 
+            else 
+            {
+                printf("Validation: Array is NOT correctly sorted.\n");
+            }
+
+            /* Calculate and print the execution time of the current file */
+            end_time = MPI_Wtime();
+            printf("[File: %s] | Execution time: %f seconds\n\n", argv[i], end_time - start_time);
+        }
+
+    /* Free memory */
+    free(localArray);
+    free(array);
     
-            /* Receive the control variable from the dispatcher to know if there's work still to be done (or not) */
-            MPI_Recv(&isFinished, 1, MPI_INT, 0, MPI_TAG_PROGRAM_STATE, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-            /* End worker if all files have been processed */
-            if (isFinished) 
-                break;
-
-            MPI_Recv(&fileIdx, 1, MPI_INT, 0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            MPI_Recv(&seqData->size, 1, MPI_UNSIGNED,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);        
-
-            //seqData->sequence = (unsigned int *)malloc(seqData->size * sizeof(unsigned int));
-            seqData->sequence = (unsigned int *)malloc(seqData->size * sizeof(unsigned int));
-
-
-            MPI_Recv(seqData->sequence, seqData->size, MPI_UNSIGNED,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);     
-            MPI_Recv(&seqData->status, 1, MPI_INT,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);     
-            MPI_Recv(&sequenceIdx, 1, MPI_INT,  0, MPI_TAG_CHUNK_REQUEST, MPI_COMM_WORLD, MPI_STATUS_IGNORE);         
-
-            printf("[RANK %d] AAAAAAAAAA -> %zu\n", rank, sizeof seqData->sequence);
-            printf("[RANK %d] SIZEEEEE -> %u\n", rank, seqData->size);
-
-            printf("[RANK %d] RECEBI UM CHUNK COM = %u de size\n", rank, seqData->size);         
-                      
-
-            processChunk(seqData);
-
-            MPI_Send(&fileIdx, 1, MPI_INT, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);
-            MPI_Send(&seqData->size, 1, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);                    
-            MPI_Send(seqData->sequence, seqData->size, MPI_UNSIGNED, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);    
-            MPI_Send(&seqData->status, 1, MPI_INT, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);  
-            MPI_Send(&sequenceIdx, 1, MPI_INT, 0, MPI_TAG_SEND_RESULTS, MPI_COMM_WORLD);          
-
-            printf("[RANK %d] sent sorted chunk to root with size %u. status = %d\n", rank, seqData->size, seqData->status);         
-
-            /* Reset chunk data */
-            resetChunkData(seqData);
-
-            /* End worker if all files have been processed */
-            if (isFinished)
-                break;
-            
-        }
-
     }
 
-    printf("[RANK %d] FINALIZEEEEEEEEE\n\n", rank);
+    /* Calculate the execution time of ALL the files*/
+    if (rank == DISTRIBUTOR_RANK)
+    {
+        total_end_time = MPI_Wtime();
+        printf("Total execution time: %f seconds\n", total_end_time - total_start_time);
+    }
 
+    /* Finalize the process */
     MPI_Finalize();
-    exit(EXIT_SUCCESS);
-
+    return EXIT_SUCCESS;
 }
-
-
-/**
- * @brief prints the usage of the program
- * 
- */
-void usage() {
-    printf("Usage:\n\t./prob1 -t <num_threads> -f <file1> <file2> ... <fileN> -c <chunk_size>\n\n");
-    printf("\t-t <num_threads> : Number of threads to be used (1-8)\n");
-    printf("\t-f <file1> <file2> ... <fileN> : List of files to be processed\n");
-    printf("\t-c <chunk_size> : Chunk size (4k or 8k)\n");
-}
-
