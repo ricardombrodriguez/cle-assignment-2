@@ -1,11 +1,43 @@
+/**
+ * @file bitonic_sort_mpi.c
+ * @brief Parallel Bitonic Sort using MPI
+ *
+ * This program reads integers from binary files and sorts them using the bitonic sort algorithm
+ * in parallel with the Message Passing Interface (MPI).
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <mpi.h>
 #include <string.h>
 
+/**
+ * @brief Merges sub-arrays in a bitonic sequence.
+ * 
+ * @param arr Array containing the elements to be merged.
+ * @param low Starting index of the sub-array to be merged.
+ * @param count Number of elements in the sub-array to be merged.
+ * @param direction The direction of sorting (1 for ascending, 0 for descending).
+ */
 void bitonicMerge(int *arr, int low, int count, int direction);
+
+/**
+ * @brief Recursively sorts a bitonic sequence.
+ * 
+ * @param arr Array containing the elements to be sorted.
+ * @param low Starting index of the sub-array to be sorted.
+ * @param count Number of elements in the sub-array to be sorted.
+ * @param direction The direction of sorting (1 for ascending, 0 for descending).
+ */
 void bitonicMergeSort(int *arr, int low, int count, int direction);
 
+/**
+ * @brief Main function of the program.
+ * 
+ * @param argc Number of command-line arguments.
+ * @param argv Array of command-line arguments.
+ * @return int Returns 0 on successful execution, non-zero otherwise.
+ */
 int main(int argc, char *argv[])
 {
     MPI_Init(&argc, &argv);
@@ -68,35 +100,42 @@ int main(int argc, char *argv[])
             int partner = rank ^ i;
             MPI_Sendrecv_replace(local_arr, chunk_size, MPI_INT, partner, 0, partner, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-            int direction = (rank & i) ? 0 : 1;
+             int direction = (rank & i) ? 0 : 1;
             bitonicMerge(local_arr, 0, chunk_size, direction);
-        }
-
-        MPI_Gather(local_arr, chunk_size, MPI_INT, arr, chunk_size, MPI_INT, 0, MPI_COMM_WORLD);
-
-        if (rank == 0)
-        {
-            bitonicMergeSort(arr, 0, n, 1);
-        }
-
-        if (rank == 0)
-        {
-            printf("Sorted array:\n");
-            for (int j = 0; j < n; j++)
-            {
-                printf("%d\n", arr[j]);
-            }
-        }
-
-        free(local_arr);
-        free(arr);
     }
 
-    MPI_Finalize();
-    return 0;
+    MPI_Gather(local_arr, chunk_size, MPI_INT, arr, chunk_size, MPI_INT, 0, MPI_COMM_WORLD);
+
+    if (rank == 0)
+    {
+        bitonicMergeSort(arr, 0, n, 1);
+    }
+
+    if (rank == 0)
+    {
+        printf("Sorted array:\n");
+        for (int j = 0; j < n; j++)
+        {
+            printf("%d\n", arr[j]);
+        }
+    }
+
+    free(local_arr);
+    free(arr);
 }
 
+MPI_Finalize();
+return 0;
+}
 
+/**
+
+@brief Merges sub-arrays in a bitonic sequence.
+@param arr Array containing the elements to be merged.
+@param low Starting index of the sub-array to be merged.
+@param count Number of elements in the sub-array to be merged.
+@param direction The direction of sorting (1 for ascending, 0 for descending).
+*/
 void bitonicMerge(int *arr, int low, int count, int direction)
 {
 if (count > 1)
@@ -115,7 +154,14 @@ bitonicMerge(arr, low, k, direction);
 bitonicMerge(arr, low + k, k, direction);
 }
 }
+/**
 
+@brief Recursively sorts a bitonic sequence.
+@param arr Array containing the elements to be sorted.
+@param low Starting index of the sub-array to be sorted.
+@param count Number of elements in the sub-array to be sorted.
+@param direction The direction of sorting (1 for ascending, 0 for descending).
+*/
 void bitonicMergeSort(int *arr, int low, int count, int direction)
 {
 if (count > 1)
