@@ -22,10 +22,12 @@ extern unsigned int numFiles;
 extern int currentFileIndex;
 
 /* Bool to check if all files were processed */
-extern int filesFinished;
+extern int isFinished;
 
 /* Size - Number of processes (including root) */
 extern int size;
+
+int chunkIdx = 0;
 
 
 /**
@@ -135,53 +137,27 @@ int getChunk() {
         int sequenceToMergeIdx = 0;
 
         /* Search for two sequences that need to be merged (with -2 values) */
-        for (int i = 0; i < size - 1; i++) {
+        for (int i = chunkIdx; i < size - 1; i++) {
 
             /* Check for two sorted sequences that can be merged together */
             if ((files + currentFileIndex)->allSequences[i]->status == SEQUENCE_SORTED) {
                 sequencesToMerge[sequenceToMergeIdx++] = i;
             } 
 
+            chunkIdx++;
+            if (chunkIdx >= size - 1) 
+                chunkIdx = 0;
+
             /* Already found to sequences to merge! */
             if (sequenceToMergeIdx >= 2) {
-                ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->status = SEQUENCE_BEING_MERGED;   /* Make second sequence obsolete, as it will be merged into the 1st one */
-                ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->status = SEQUENCE_OBSOLETE;   /* Make second sequence obsolete, as it will be merged into the 1st one */
-    
-                
-                printf("SEQUENCE NUM 0: %u\n", ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size);
-                for (int j = 0; j < (files + currentFileIndex)->allSequences[sequencesToMerge[0]]->size; j++) {
-                    printf("%u « ", (files + currentFileIndex)->allSequences[sequencesToMerge[0]]->sequence[j]);
-                }
-                printf("!!!\n");
 
-                printf("SEQUENCE NUM 1: %u\n", ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->size);
-                for (int j = 0; j < (files + currentFileIndex)->allSequences[sequencesToMerge[1]]->size; j++) {
-                    printf("%u « ", (files + currentFileIndex)->allSequences[sequencesToMerge[1]]->sequence[j]);
-                }
-                printf("!!!\n");
-                
-                
-                //((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size += ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->size;    /* New sequence will have the size of both sequences size */
-                //((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence = (unsigned int *) realloc(((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence, ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size * sizeof(unsigned int));
-                
-                memcpy(((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence + ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size, ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->sequence, ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->size * sizeof(unsigned int));
-
-                
-                // for (int j = 0; j < ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->size; j++) {
-                //     ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence[ ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size + j] = ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->sequence[j];
-                // }
-
-
-                printf("SEQUENCE mergeddddddddddddddd: %u\n", ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size);
-                for (int j = 0; j < (files + currentFileIndex)->allSequences[sequencesToMerge[0]]->size; j++) {
-                    printf("%u « ", (files + currentFileIndex)->allSequences[sequencesToMerge[0]]->sequence[j]);
-                }
-                printf("!!!\n");
+                mergeSequences(((files + currentFileIndex)->allSequences[sequencesToMerge[0]]),((files + currentFileIndex)->allSequences[sequencesToMerge[1]]));
 
                 int isFinalSequence = 1;
 
                 /* If it's the final sequence (file sorted), all of the other sequences should have the status SEQUENCE_OBSOLETE */
-                for (int j = sequencesToMerge[0]+1; j < size-1; j++) {
+                for (int j = 0; j < size-1; j++) {
+                    if (j == sequencesToMerge[0]) continue;
                     if (((files + currentFileIndex)->allSequences[j])->status != SEQUENCE_OBSOLETE) {
                         isFinalSequence = 0;
                         break;
@@ -207,12 +183,6 @@ int getChunk() {
 void processChunk(struct Sequence *sequence) {
 
     mergeSortWrapper(&sequence->sequence, sequence->size);
-
-
-    if (sequence->status == SEQUENCE_FINAL) {
-        printf("isFinished!!!!\n");
-        memcpy((files + currentFileIndex)->fullSequence, sequence->sequence, sequence->size * sizeof(unsigned));
-    }
 
     if (sequence->status == SEQUENCE_BEING_SORTED || sequence->status == SEQUENCE_BEING_MERGED) {
         printf("-- Sequence is sorted!\n");
@@ -363,13 +333,13 @@ void mergeSequences(struct Sequence *seq1, struct Sequence *seq2) {
     unsigned int *result = (unsigned int *)malloc((size1 + size2) * sizeof(unsigned int));
     int i = 0, j = 0, k = 0;
 
-    while (i < size1 && j < size2) {
-        if (seq1->sequence[i] < seq2->sequence[j]) {
-            result[k++] = seq1->sequence[i++];
-        } else {
-            result[k++] = seq2->sequence[j++];
-        }
-    }
+    // while (i < size1 && j < size2) {
+    //     if (seq1->sequence[i] < seq2->sequence[j]) {
+    //         result[k++] = seq1->sequence[i++];
+    //     } else {
+    //         result[k++] = seq2->sequence[j++];
+    //     }
+    // }
 
     while (i < size1) {
         result[k++] = seq1->sequence[i++];
@@ -383,4 +353,6 @@ void mergeSequences(struct Sequence *seq1, struct Sequence *seq2) {
     free(seq1->sequence);
     seq1->sequence = result;
     seq1->size = size1 + size2;
+    seq1->status = SEQUENCE_SORTED;
+    seq2->status = SEQUENCE_OBSOLETE;
 }
