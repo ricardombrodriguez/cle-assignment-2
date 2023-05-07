@@ -66,7 +66,7 @@ extern void storeFilenames(char *filenames[], int size);
 extern int getChunk();
 
 
-extern void processChunk(int sequenceIdx);
+extern void processChunk(struct Sequence *sequence);
 
 extern int validation();
 
@@ -78,13 +78,19 @@ extern void resetFilesData(struct fileInfo *files);
 /** \brief get the determinant of given matrix */
 extern double getDeterminant(int order, double *matrix); 
 
-extern void bitonic_merge(unsigned int arr[], int low, int cnt, int dir);
+extern void bitonic_merge(unsigned int arr[], unsigned int low, unsigned int cnt, unsigned int dir);
 
-extern void bitonic_sort_recursive(unsigned int arr[], int low, int cnt, int dir);
+extern void bitonic_sort_recursive(unsigned int arr[], unsigned int low, unsigned int cnt, unsigned int dir);
 
-extern void bitonic_sort(unsigned int arr[], int n);
+extern void bitonic_sort(unsigned int arr[], unsigned int n);
 
-extern void merge_sorted_arrays(unsigned int *arr1, int n1, unsigned int *arr2, int n2, unsigned int *result);
+
+extern void merge(unsigned int arr[], unsigned int left[], unsigned int leftSize, unsigned int right[], unsigned int rightSize);
+extern void mergeSort(unsigned int arr[], unsigned int size);
+extern void mergeSortWrapper(unsigned int *arr[], unsigned int size);
+
+extern void mergeSequences(struct Sequence *seq1, struct Sequence *seq2);
+
 
 
 #endif /* UTILS_H */

@@ -50,28 +50,29 @@ void storeFilenames(char *filenames[], int size) {
             exit(EXIT_FAILURE);
         }
         (files + i)->fileIndex = i;
-        if (fread(&(files + i)->numNumbers, sizeof(int), 1,(files + i)->fp )) {
+        if (!fread(&(files + i)->numNumbers, sizeof(unsigned int), 1, (files + i)->fp )) {
             printf("[ERROR] Can't read the first line of the file\n");
             exit(EXIT_FAILURE);
         }
         (files + i)->chunkSize = (unsigned int) ceil((files + i)->numNumbers / (size - 1)); /* Not counting with the root process */
         (files + i)->allSequences = (struct Sequence**)malloc((size-1) * sizeof(struct Sequence));
+        (files + i)->fullSequence = (unsigned int *) malloc((files + i)->numNumbers * sizeof(unsigned int));
+
 
         for (int j = 0; j < size-1; j++) {
 
-            /*Allocate memory for the chunk */
-            memset((files + i)->allSequences[j], 0, sizeof(struct Sequence));
-            (files + i)->allSequences[j]->sequence = (unsigned int *) malloc((files + i)->chunkSize * sizeof(unsigned int));
-            (files + i)->allSequences[j]->status = SEQUENCE_UNSORTED;
-            /* Get chunk data */
-            (files + i)->allSequences[j]->size = (files + i)->chunkSize;
-            /* Last worker can have a different sequence size, since the sequences could not be splitted equally through all workers */
+            struct Sequence *sequence = (struct Sequence *) malloc(sizeof(struct Sequence));
+            sequence->sequence = (unsigned int *) malloc((files + i)->chunkSize * sizeof(unsigned int));
+            sequence->status = SEQUENCE_UNSORTED;
+            sequence->size = (files + i)->chunkSize;
             if (j == size - 1) {
-                (files + i)->allSequences[j]->size = (files + i)->numNumbers - ((files + i)->chunkSize * (size - 2));
+                sequence->size = (files + i)->numNumbers - ((files + i)->chunkSize * (size - 2));
             }
+            (files + i)->allSequences[j] = sequence;
+            //memcpy((files + i)->allSequences[j], sequence, sizeof(struct Sequence));
+
 
         }
-
         (files + i)->isFinished = 0;
 
         int j = 0;
@@ -123,6 +124,8 @@ int getChunk() {
 
                 (files + currentFileIndex)->allSequences[idx]->status = SEQUENCE_BEING_SORTED;
                 return idx;
+            } else {
+                printf("STATUS = %d \n", (files + currentFileIndex)->allSequences[idx]->status);
             }
 
         }
@@ -143,11 +146,51 @@ int getChunk() {
             if (sequenceToMergeIdx >= 2) {
                 ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->status = SEQUENCE_BEING_MERGED;   /* Make second sequence obsolete, as it will be merged into the 1st one */
                 ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->status = SEQUENCE_OBSOLETE;   /* Make second sequence obsolete, as it will be merged into the 1st one */
-                ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size += ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->size;    /* New sequence will have the size of both sequences size */
-                ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence = (unsigned int *) realloc(((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence, ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size * sizeof(unsigned int));
-                for (int j = 0; j < ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->size; j++) {
-                    ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence[ ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size + j] = ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->sequence[j];
+    
+                
+                printf("SEQUENCE NUM 0: %u\n", ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size);
+                for (int j = 0; j < (files + currentFileIndex)->allSequences[sequencesToMerge[0]]->size; j++) {
+                    printf("%u « ", (files + currentFileIndex)->allSequences[sequencesToMerge[0]]->sequence[j]);
                 }
+                printf("!!!\n");
+
+                printf("SEQUENCE NUM 1: %u\n", ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->size);
+                for (int j = 0; j < (files + currentFileIndex)->allSequences[sequencesToMerge[1]]->size; j++) {
+                    printf("%u « ", (files + currentFileIndex)->allSequences[sequencesToMerge[1]]->sequence[j]);
+                }
+                printf("!!!\n");
+                
+                
+                //((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size += ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->size;    /* New sequence will have the size of both sequences size */
+                //((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence = (unsigned int *) realloc(((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence, ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size * sizeof(unsigned int));
+                
+                memcpy(((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence + ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size, ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->sequence, ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->size * sizeof(unsigned int));
+
+                
+                // for (int j = 0; j < ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->size; j++) {
+                //     ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->sequence[ ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size + j] = ((files + currentFileIndex)->allSequences[sequencesToMerge[1]])->sequence[j];
+                // }
+
+
+                printf("SEQUENCE mergeddddddddddddddd: %u\n", ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->size);
+                for (int j = 0; j < (files + currentFileIndex)->allSequences[sequencesToMerge[0]]->size; j++) {
+                    printf("%u « ", (files + currentFileIndex)->allSequences[sequencesToMerge[0]]->sequence[j]);
+                }
+                printf("!!!\n");
+
+                int isFinalSequence = 1;
+
+                /* If it's the final sequence (file sorted), all of the other sequences should have the status SEQUENCE_OBSOLETE */
+                for (int j = sequencesToMerge[0]+1; j < size-1; j++) {
+                    if (((files + currentFileIndex)->allSequences[j])->status != SEQUENCE_OBSOLETE) {
+                        isFinalSequence = 0;
+                        break;
+                    }
+                }
+                if (isFinalSequence) {
+                    ((files + currentFileIndex)->allSequences[sequencesToMerge[0]])->status = SEQUENCE_FINAL;
+                }
+
                 return sequencesToMerge[0];
             }
 
@@ -161,12 +204,19 @@ int getChunk() {
 }
 
 
-void processChunk(int sequenceIdx) {
+void processChunk(struct Sequence *sequence) {
 
-    bitonic_sort((files + currentFileIndex)->allSequences[sequenceIdx]->sequence, (files + currentFileIndex)->allSequences[sequenceIdx]->size);
+    mergeSortWrapper(&sequence->sequence, sequence->size);
 
-    if ((files + currentFileIndex)->isFinished) {
-        memcpy((files + currentFileIndex)->fullSequence, (files + currentFileIndex)->allSequences[sequenceIdx]->sequence, (files + currentFileIndex)->allSequences[sequenceIdx]->size * sizeof(unsigned));
+
+    if (sequence->status == SEQUENCE_FINAL) {
+        printf("isFinished!!!!\n");
+        memcpy((files + currentFileIndex)->fullSequence, sequence->sequence, sequence->size * sizeof(unsigned));
+    }
+
+    if (sequence->status == SEQUENCE_BEING_SORTED || sequence->status == SEQUENCE_BEING_MERGED) {
+        printf("-- Sequence is sorted!\n");
+        sequence->status = SEQUENCE_SORTED;
     }
 
 }
@@ -210,10 +260,10 @@ void resetFilesData(struct fileInfo *files) {
 
 
 
-void bitonic_merge(unsigned int arr[], int low, int cnt, int dir) {
+void bitonic_merge(unsigned int arr[], unsigned int low, unsigned int cnt, unsigned int dir) {
     if (cnt > 1) {
-        int k = cnt / 2;
-        for (int i = low; i < low + k; i++) {
+        unsigned int k = cnt / 2;
+        for (unsigned int i = low; i < low + k; i++) {
             if (1 == (arr[i] > arr[i + k])) {
                 int temp = arr[i];
                 arr[i] = arr[i + k];
@@ -225,46 +275,112 @@ void bitonic_merge(unsigned int arr[], int low, int cnt, int dir) {
     }
 }
 
-void bitonic_sort_recursive(unsigned int arr[], int low, int cnt, int dir) {
+void bitonic_sort_recursive(unsigned int arr[], unsigned int low, unsigned int cnt, unsigned int dir) {
     if (cnt > 1) {
-        int k = cnt / 2;
+        unsigned int k = cnt / 2;
         bitonic_sort_recursive(arr, low, k, 1);
         bitonic_sort_recursive(arr, low + k, k, 0);
         bitonic_merge(arr, low, cnt, dir);
     }
 }
 
-void bitonic_sort(unsigned int arr[], int n) {
-    int cnt = 2;
+void bitonic_sort(unsigned int arr[], unsigned int n) {
+    unsigned int cnt = 2;
     while (cnt <= n) {
-        for (int i = 0; i < n; i += cnt) {
+        for (unsigned int i = 0; i < n; i += cnt) {
             bitonic_sort_recursive(arr, i, cnt, 1);
         }
         cnt *= 2;
     }
 }
 
-void merge_sorted_arrays(unsigned int *arr1, int n1, unsigned int *arr2, int n2, unsigned int *result) {
+
+
+
+
+void merge(unsigned int arr[], unsigned int left[], unsigned int leftSize, unsigned int right[], unsigned int rightSize) {
+    unsigned int i = 0, j = 0, k = 0;
+    
+    while (i < leftSize && j < rightSize) {
+        if (left[i] <= right[j]) {
+            arr[k] = left[i];
+            i++;
+        }
+        else {
+            arr[k] = right[j];
+            j++;
+        }
+        k++;
+    }
+    
+    while (i < leftSize) {
+        arr[k] = left[i];
+        i++;
+        k++;
+    }
+    
+    while (j < rightSize) {
+        arr[k] = right[j];
+        j++;
+        k++;
+    }
+}
+
+void mergeSort(unsigned int arr[], unsigned int size) {
+    if (size < 2) {
+        return;
+    }
+    
+    unsigned int mid = size / 2;
+    unsigned int left[mid];
+    unsigned int right[size - mid];
+    
+    for (unsigned int i = 0; i < mid; i++) {
+        left[i] = arr[i];
+    }
+    
+    for (unsigned int i = mid; i < size; i++) {
+        right[i - mid] = arr[i];
+    }
+    
+    mergeSort(left, mid);
+    mergeSort(right, size - mid);
+    merge(arr, left, mid, right, size - mid);
+}
+
+void mergeSortWrapper(unsigned int *arr[], unsigned int size) {
+    if (arr == NULL || *arr == NULL || size == 0) {
+        return;
+    }
+    
+    unsigned int *temp = *arr;
+    mergeSort(temp, size);
+}
+
+void mergeSequences(struct Sequence *seq1, struct Sequence *seq2) {
+    int size1 = seq1->size;
+    int size2 = seq2->size;
+    unsigned int *result = (unsigned int *)malloc((size1 + size2) * sizeof(unsigned int));
     int i = 0, j = 0, k = 0;
 
-    while (i < n1 && j < n2) {
-        if (arr1[i] <= arr2[j]) {
-            result[k++] = arr1[i++];
+    while (i < size1 && j < size2) {
+        if (seq1->sequence[i] < seq2->sequence[j]) {
+            result[k++] = seq1->sequence[i++];
         } else {
-            result[k++] = arr2[j++];
+            result[k++] = seq2->sequence[j++];
         }
     }
 
-    while (i < n1) {
-        result[k++] = arr1[i++];
+    while (i < size1) {
+        result[k++] = seq1->sequence[i++];
     }
 
-    while (j < n2) {
-        result[k++] = arr2[j++];
+    while (j < size2) {
+        result[k++] = seq2->sequence[j++];
     }
 
-    //int *result = (int *)malloc((n1 + n2) * sizeof(int));
-
-    //merge_sorted_arrays(arr1, n1, arr2, n2, result);
+    // Update the first sequence with the merged result and update its size
+    free(seq1->sequence);
+    seq1->sequence = result;
+    seq1->size = size1 + size2;
 }
-

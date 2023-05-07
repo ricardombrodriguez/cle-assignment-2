@@ -41,7 +41,7 @@
 #define SEQUENCE_OBSOLETE 4
 
 /** \brief Identify the sequence with all the file numbers sorted */
-#define SEQUENCE_FINAL 
+#define SEQUENCE_FINAL 5
 
 
 #endif /* CONSTANTS_H */
