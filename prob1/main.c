@@ -119,8 +119,8 @@ int main(int argc, char *argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     /* ERROR. Number of processes should be limited. */
-    if (size < 1 || size > 8) {
-        fprintf(stderr, "Invalid number of processes (must be >= 1 and <= 8)");
+    if (size < 2 || size > 9) {
+        fprintf(stderr, "Invalid number of processes (must be >= 2 and <= 9)");
         return EXIT_FAILURE;
     }
 

@@ -84,7 +84,9 @@ int main(int argc, char *argv[])
         }
 
         /* Broadcast the integer array to other processes */
-        MPI_Bcast(array, numValues, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_B∏
+        
+        cast(array, numValues, MPI_INT, 0, MPI_COMM_WORLD);
 
         int *localArray = (int *)malloc(numValues * sizeof(int)); /* Allocate memory for the local array */
         int chunkSize = numValues / size; /* The chunk size is equally reparted according to the number of processes (size) */
